@@ -1,0 +1,128 @@
+/* src/index.css */
+
+/* Styles for Tiptap ReadOnly View (already provided by you, ensure it's up-to-date) */
+.tiptap-readonly .ProseMirror {
+    outline: none;
+    padding: 0.5rem 0.8rem;
+  }
+  .tiptap-readonly p {
+    margin-bottom: 0.5em;
+  }
+  .tiptap-readonly ul,
+  .tiptap-readonly ol {
+    padding-left: 1.5em;
+    margin-bottom: 0.5em;
+  }
+  .tiptap-readonly li {
+    margin-bottom: 0.25em;
+  }
+  
+  /* --- Styles for Custom Tiptap Header Nodes --- */
+  
+  /* Styles for UnmodifiableHeaderNode (rendered as h1, h2, h3 etc. with data-unmodifiable-header) */
+  /* These primarily come from tiptapExtensions.ts renderHTML, but you can add overrides here */
+  [data-unmodifiable-header="true"] {
+    /* color: #333; */ /* Example: defined in renderHTML */
+    /* font-weight: bold; */ /* Example: defined in renderHTML */
+    /* user-select: none; */ /* Example: defined in renderHTML */
+    /* Specific overrides or additional styles if needed */
+    /* e.g., border-bottom: 1px solid #eee; */
+  }
+  
+  /* Styles for EditableHeaderNode (rendered as h1, h2, h3 etc. with data-editable-header) */
+  [data-editable-header="true"] {
+    /* display: flex; */ /* Example: defined in renderHTML */
+    /* align-items: baseline; */ /* Example: defined in renderHTML */
+    /* font-weight: bold; */ /* Example: defined in renderHTML */
+    /* margin-top: 1em; */ /* Example: defined in renderHTML */
+    /* margin-bottom: 0.2em; */ /* Example: defined in renderHTML */
+  }
+  
+  [data-editable-header] [data-header-label] {
+    /* color: #555; */ /* Example: defined in renderHTML */
+    /* margin-right: 0.5em; */ /* Example: defined in renderHTML */
+    /* user-select: none; */ /* Example: defined in renderHTML */
+    /* Ensure it's not overly bold if the parent Hx tag is already bold */
+    font-weight: normal; /* Or a specific lighter weight if needed */
+  }
+  
+  [data-editable-header] [data-header-value] {
+    /* flex-grow: 1; */ /* Example: defined in renderHTML */
+    /* outline: none; */ /* Example: defined in renderHTML */
+    /* min-width: 100px; */ /* Example: defined in renderHTML */
+    font-weight: normal; /* Make the editable part normal weight if parent Hx is bold */
+    /* Optionally, add a visual cue that it's editable */
+    /* border-bottom: 1px dashed #ccc; */
+    /* padding: 2px 4px; */
+    /* margin-left: -4px; */ /* Counteract padding if you want it to align perfectly */
+  }
+  
+  [data-editable-header] [data-header-value]:focus {
+    /* border-bottom: 1px solid #888; */
+    /* background-color: #f9f9f9; */
+  }
+  
+  /* Placeholder styles for editable header value (if using Tiptap's Placeholder extension) */
+  .ProseMirror [data-editable-header] [data-header-value] p.is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    float: left;
+    color: #adb5bd; /* Mantine's default placeholder color */
+    pointer-events: none;
+    height: 0;
+  }
+  
+  
+  /* General Tiptap editor content styling (within RichTextEditor.Content) */
+  /* You might have these via Mantine's theme or RichTextEditor default styles already */
+  .ProseMirror {
+    /* Base font styles, line height, etc. */
+  }
+  
+  .ProseMirror h1, /* For standard tiptap headings, if used */
+  .ProseMirror h2,
+  .ProseMirror h3,
+  .ProseMirror h4,
+  .ProseMirror h5,
+  .ProseMirror h6 {
+    /* margin-top: 1.2em; */
+    /* margin-bottom: 0.5em; */
+    /* line-height: 1.2; */
+  }
+  
+  .ProseMirror p {
+    /* margin-bottom: 0.75em; */
+  }
+  
+  .ProseMirror ul,
+  .ProseMirror ol {
+    /* padding-left: 1.5em; */
+    /* margin-bottom: 0.75em; */
+  }
+  
+  .ProseMirror li > p { /* Tiptap often wraps list item content in paragraphs */
+    /* margin-bottom: 0.25em; */
+  }
+  
+  .ProseMirror blockquote {
+    /* border-left: 3px solid #ccc; */
+    /* margin-left: 0; */
+    /* padding-left: 1em; */
+    /* color: #555; */
+  }
+  
+  .ProseMirror pre { /* For code blocks */
+    /* background: #f4f4f4; */
+    /* border: 1px solid #ddd; */
+    /* border-radius: 4px; */
+    /* padding: 1em; */
+    /* white-space: pre-wrap; */
+    /* font-family: monospace; */
+  }
+  
+  .ProseMirror code { /* For inline code */
+    /* background: #f4f4f4; */
+    /* padding: 0.2em 0.4em; */
+    /* border-radius: 3px; */
+    /* font-family: monospace; */
+    /* font-size: 0.9em; */
+  }
