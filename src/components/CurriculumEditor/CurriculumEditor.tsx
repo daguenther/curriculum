@@ -17,21 +17,10 @@ interface CurriculumEditorProps {
   courseId: string;
 }
 
-export interface CurriculumEditorRef {
-  triggerAddUnit: () => void;
-  triggerCopyMarkdown: () => void;
-  triggerSuggestChanges: () => void;
-  scrollToSection: (sectionId: string) => void; // Added for scrolling
-  // getEditorContent: () => JSONContent | null; // Alternative approach, not used for now
-}
-
-const CurriculumEditor = forwardRef<CurriculumEditorRef, CurriculumEditorProps>(
-  ({ initialCourseData, onSave, courseId }, ref) => {
-    const editor = useEditor({
-      // immediatelyRender: false, // Default is true. Let's test with true or removing it.
-                                // If issues arise with DOM not being ready, can revert or use other strategies.
-                                // For now, relying on editorKey and activeTab in App.tsx useEffect.
-      extensions: editorExtensions,
+const CurriculumEditor: React.FC<CurriculumEditorProps> = ({ initialCourseData, onSave, courseId }) => {
+  const editor = useEditor({
+    immediatelyRender: false, 
+    extensions: editorExtensions,
     content: '',
     editable: true,
   });
@@ -75,55 +64,6 @@ const CurriculumEditor = forwardRef<CurriculumEditorRef, CurriculumEditorProps>(
       notifications.show({ title: 'Error', message: 'Cannot add unit. Command not available.', color: 'red' });
     }
   };
-
-  const internalHandleSuggestChanges = () => {
-    if (editor) {
-      const jsonContent = editor.getJSON();
-      onSaveRef.current(jsonContent); // Call the onSave prop passed from App.tsx
-    }
-  };
-
-  useImperativeHandle(ref, () => ({
-    triggerAddUnit: () => {
-      internalHandleAddUnit();
-    },
-    triggerCopyMarkdown: async () => {
-      await internalHandleCopyAsMarkdown();
-    },
-    triggerSuggestChanges: () => {
-      internalHandleSuggestChanges();
-    },
-    scrollToSection: (sectionId: string) => {
-      if (!editor || editor.isDestroyed) {
-        console.warn(`scrollToSection: Editor not available or destroyed (sectionId: ${sectionId}).`);
-        return;
-      }
-      // Attempt to find the element.
-      // editor.view.dom is the root ProseMirror editable element.
-      const element = editor.view.dom.querySelector(`[data-section-id="${sectionId}"]`);
-      
-      if (element) {
-        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      } else {
-        // Fallback or warning if element not found. This might happen if content rendering is delayed.
-        console.warn(`scrollToSection: Element with data-section-id="${sectionId}" not found. Attempting scroll on next frame.`);
-        // As a fallback, try after a very short delay, in case the DOM wasn't fully ready.
-        // This is a common pattern but should be used cautiously.
-        // The editorKey change in App.tsx should ideally handle most race conditions.
-        requestAnimationFrame(() => {
-          const elementRetry = editor.view.dom.querySelector(`[data-section-id="${sectionId}"]`);
-          if (elementRetry) {
-            elementRetry.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          } else {
-            console.error(`scrollToSection: Element with data-section-id="${sectionId}" still not found after retry.`);
-          }
-        });
-      }
-    },
-    // getEditorContent: () => { // Alternative approach
-    //   return editor ? editor.getJSON() : null;
-    // }
-  }));
 
   if (!editor) {
     return <div>Loading editor...</div>;

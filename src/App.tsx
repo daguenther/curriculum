@@ -48,12 +48,7 @@ import { type JSONContent } from '@tiptap/core';
 // This would typically go into a constants file (e.g., src/utils/constants.ts)
 // export const EMPTY_RICH_TEXT_CONTENT = () => ({ type: 'doc', content: [{ type: 'paragraph' }] });
 // Stored as string:
-// export const EMPTY_ARRAY_JSON_STRING = JSON.stringify([]); // Represents empty content for a Tiptap field
-// Now imported from constants.ts
-import { EMPTY_ARRAY_JSON_STRING } from './utils/constants';
-// Import the constant for scrolling to the overall course section
-import { COURSE_HEADER_SECTION_ID } from './components/CurriculumEditor/courseSerializer'; 
-
+export const EMPTY_ARRAY_JSON_STRING = JSON.stringify([]); // Represents empty content for a Tiptap field
 
 type ViewMode = 'editor' | 'comparison';
 
@@ -61,9 +56,6 @@ function App() {
   const [mobileOpened, { toggle: toggleMobile }] = useDisclosure();
   const [desktopOpened, { toggle: toggleDesktop }] = useDisclosure(true);
   const [viewMode, setViewMode] = useState<ViewMode>('editor');
-  const [activeTab, setActiveTab] = useState<string | null>('overall'); // State for active tab
-
-  const editorRef = useRef<CurriculumEditorRef>(null); // Added editorRef
 
   const [coursesMetadata, setCoursesMetadata] = useState<CourseMetadata[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
@@ -261,27 +253,7 @@ function App() {
             visibleFrom="sm"
             size="sm"
           />
-          <Title order={3}>
-            Curriculum Mapper
-            {currentCourse && currentCourse.title && ` | ${currentCourse.title}`}
-          </Title>
-          <Group ml="auto"> {/* Group for action buttons */}
-            {viewMode === 'editor' && currentCourse && (
-              <>
-                <Tooltip label="Add a new unit" withArrow>
-                  <Button
-                    variant="light"
-                    onClick={() => editorRef.current?.triggerAddUnit()}
-                    disabled={!currentCourse || isLoading}
-                    leftSection={<IconPlus size={16} />}
-                  >
-                    Add Unit
-                  </Button>
-                </Tooltip>
-                {/* "Copy Markdown" and "Suggest Changes" buttons removed from here */}
-              </>
-            )}
-          </Group>
+          <Title order={3}>Curriculum Mapper</Title>
         </Group>
       </AppShell.Header>
 
@@ -380,63 +352,29 @@ function App() {
           </Alert>
         )}
 
-        {viewMode === 'editor' && (
-          <>
-            <StatusBar currentCourse={currentCourse} />
-            {currentCourse && selectedCourseId ? (
-              <Tabs value={activeTab} onChange={setActiveTab} mt="md">
-                <Tabs.List>
-                  <Tabs.Tab value="overall">Overall Course</Tabs.Tab>
-                  {currentCourse.units?.map((unit, index) => (
-                    <Tabs.Tab value={unit.id} key={unit.id}>
-                      Unit {index + 1}: {unit.unitName || 'Unnamed Unit'}
-                    </Tabs.Tab>
-                  ))}
-                </Tabs.List>
-
-                <Tabs.Panel value="overall" pt="md">
-                  <CurriculumEditor
-                    ref={editorRef}
-                    key={`${editorKey}-overall`} // Ensure unique key for editor instance
-                    initialCourseData={currentCourse}
-                    onSave={handleSuggestChanges}
-                    courseId={selectedCourseId}
-                    // activeUnitId={null} // In a future step, this could control scrolling
-                  />
-                </Tabs.Panel>
-
-                {currentCourse.units?.map((unit) => (
-                  <Tabs.Panel value={unit.id} key={unit.id} pt="md">
-                    <CurriculumEditor
-                      ref={editorRef} // Same ref, but might be problematic if multiple editors are truly active
-                                      // For this step, only one panel is visible, so it's okay.
-                      key={`${editorKey}-${unit.id}`} // Ensure unique key for editor instance per tab
-                      initialCourseData={currentCourse}
-                      onSave={handleSuggestChanges}
-                      courseId={selectedCourseId}
-                      // activeUnitId={unit.id} // In a future step, this could control scrolling
-                    />
-                  </Tabs.Panel>
-                ))}
-              </Tabs>
-            ) : (
-              !isLoading && ( // Show "No course selected" only if not loading
-              <Paper p="xl" withBorder style={{ textAlign: 'center', marginTop: 'md' }}>
-                <IconFolderOpen
-                  size={48}
-                  stroke={1.5}
-                  style={{ marginBottom: '1rem', color: 'var(--mantine-color-gray-6)' }}
-                />
-                <Title order={4}>No course selected</Title>
-                <Text c="dimmed">
-                  Please select a course from the sidebar or create a new one to
-                  start editing.
-                </Text>
-              </Paper>
-              )
-            )}
-          </>
+        {viewMode === 'editor' && currentCourse && selectedCourseId &&(
+          <CurriculumEditor
+            key={editorKey} // Force re-mount when course changes for proper Tiptap init
+            initialCourseData={currentCourse}
+            onSave={handleSaveCourse}
+            courseId={selectedCourseId}
+          />
         )}
+        {viewMode === 'editor' && !currentCourse && !isLoading && (
+          <Paper p="xl" withBorder style={{ textAlign: 'center' }}>
+            <IconFolderOpen
+              size={48}
+              stroke={1.5}
+              style={{ marginBottom: '1rem', color: 'var(--mantine-color-gray-6)' }}
+            />
+            <Title order={4}>No course selected</Title>
+            <Text c="dimmed">
+              Please select a course from the sidebar or create a new one to
+              start editing.
+            </Text>
+          </Paper>
+        )}
+
         {viewMode === 'comparison' && (
           <ComparisonView docId1={compareDocId1} docId2={compareDocId2} />
         )}
