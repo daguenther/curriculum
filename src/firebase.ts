@@ -8,6 +8,7 @@ import {
   collection,
   getDocs,
   query,
+  addDoc,
   // updateDoc // If you only want to update specific fields
 } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
@@ -45,11 +46,21 @@ export const fetchCourseById = async (courseId: string): Promise<Course | null> 
   }
 };
 
-export const saveCourse = async (courseId: string, courseData: Omit<Course, 'id'>): Promise<void> => {
+export const saveCourse = async (courseId: string | null, courseData: Omit<Course, 'id'>): Promise<string> => {
   try {
-    const courseRef = doc(db, CURRICULUM_COLLECTION_NAME, courseId); // CHANGED
-    await setDoc(courseRef, courseData, { merge: true });
-    console.log("Course saved successfully to curriculum:", courseId);
+    if (courseId === null) {
+      // Create a new course with an auto-generated ID
+      const coursesCollectionRef = collection(db, CURRICULUM_COLLECTION_NAME);
+      const docRef = await addDoc(coursesCollectionRef, courseData);
+      console.log("New course created successfully with ID:", docRef.id);
+      return docRef.id;
+    } else {
+      // Update an existing course
+      const courseRef = doc(db, CURRICULUM_COLLECTION_NAME, courseId);
+      await setDoc(courseRef, courseData, { merge: true });
+      console.log("Course saved successfully to curriculum:", courseId);
+      return courseId;
+    }
   } catch (error) {
     console.error("Error saving course to curriculum:", error);
     throw error;

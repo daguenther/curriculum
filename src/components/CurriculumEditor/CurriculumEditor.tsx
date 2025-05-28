@@ -1,5 +1,5 @@
 // src/components/CurriculumEditor/CurriculumEditor.tsx
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
 import { useEditor, EditorContent, type JSONContent } from '@tiptap/react';
 import { editorExtensions } from './tiptapExtensions';
 import { type Course } from '../../types';
@@ -17,10 +17,18 @@ interface CurriculumEditorProps {
   courseId: string;
 }
 
-const CurriculumEditor: React.FC<CurriculumEditorProps> = ({ initialCourseData, onSave, courseId }) => {
-  const editor = useEditor({
-    immediatelyRender: false, 
-    extensions: editorExtensions,
+export interface CurriculumEditorRef {
+  triggerAddUnit: () => void;
+  triggerCopyMarkdown: () => void;
+  triggerSuggestChanges: () => void;
+  // getEditorContent: () => JSONContent | null; // Alternative approach, not used for now
+}
+
+const CurriculumEditor = forwardRef<CurriculumEditorRef, CurriculumEditorProps>(
+  ({ initialCourseData, onSave, courseId }, ref) => {
+    const editor = useEditor({
+      immediatelyRender: false,
+      extensions: editorExtensions,
     content: '',
     editable: true,
   });
@@ -38,14 +46,8 @@ const CurriculumEditor: React.FC<CurriculumEditorProps> = ({ initialCourseData, 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialCourseData, editor]);
 
-  const handleSaveClick = () => {
-    if (editor) {
-      const jsonContent = editor.getJSON();
-      onSaveRef.current(jsonContent);
-    }
-  };
-
-  const handleCopyAsMarkdown = async () => {
+  // Internal handlers, will be triggered by exposed methods
+  const internalHandleCopyAsMarkdown = async () => {
     if (!editor) return;
     try {
       const editorJson = editor.getJSON();
@@ -62,7 +64,7 @@ const CurriculumEditor: React.FC<CurriculumEditorProps> = ({ initialCourseData, 
     }
   };
 
-  const handleAddUnit = () => {
+  const internalHandleAddUnit = () => {
     if (editor && editor.commands.addUnit) {
       editor.chain().focus().addUnit().run();
     } else {
@@ -71,41 +73,41 @@ const CurriculumEditor: React.FC<CurriculumEditorProps> = ({ initialCourseData, 
     }
   };
 
+  const internalHandleSuggestChanges = () => {
+    if (editor) {
+      const jsonContent = editor.getJSON();
+      onSaveRef.current(jsonContent); // Call the onSave prop passed from App.tsx
+    }
+  };
+
+  useImperativeHandle(ref, () => ({
+    triggerAddUnit: () => {
+      internalHandleAddUnit();
+    },
+    triggerCopyMarkdown: async () => {
+      await internalHandleCopyAsMarkdown();
+    },
+    triggerSuggestChanges: () => {
+      internalHandleSuggestChanges();
+    },
+    // getEditorContent: () => { // Alternative approach
+    //   return editor ? editor.getJSON() : null;
+    // }
+  }));
+
   if (!editor) {
     return <div>Loading editor...</div>;
   }
 
+  // The Paper element with buttons is removed from here
   return (
     <Stack>
-      <Paper p="sm" shadow="xs" withBorder>
-        <Group justify="space-between">
-          <Title order={4}>Editing: {initialCourseData.title} ({initialCourseData.name})</Title>
-          <Group>
-            <Tooltip label="Add a new unit to the end" position="bottom" withArrow>
-              <Button
-                variant="light"
-                onClick={handleAddUnit}
-                leftSection={<IconPlus size={16} />}
-              >
-                Add Unit
-              </Button>
-            </Tooltip>
-            <Tooltip label="Copy content as Markdown (includes headers)" position="bottom" withArrow>
-              <Button
-                variant="outline"
-                onClick={handleCopyAsMarkdown}
-                leftSection={<IconMarkdown size={16} />}
-              >
-                Copy Markdown
-              </Button>
-            </Tooltip>
-            <Button onClick={handleSaveClick} leftSection={<IconDeviceFloppy size={16}/>}>
-              Save Changes
-            </Button>
-          </Group>
-        </Group>
+       {/* The Paper with Title and action buttons has been removed */}
+       {/* Title is now part of AppShell.Header, buttons are also in AppShell.Header */}
+       {/* We might want a small header here, or rely on the global one */}
+       <Paper p="sm" shadow="xs" withBorder mb="md">
+        <Title order={4}>Editing: {initialCourseData.title} ({initialCourseData.name})</Title>
       </Paper>
-
       <RichTextEditor
         editor={editor}
         styles={(theme: MantineTheme) => ({
@@ -143,44 +145,33 @@ const CurriculumEditor: React.FC<CurriculumEditorProps> = ({ initialCourseData, 
               // Styles for editable headers within ProseMirror
               '& [data-editable-header="true"]': {
                 // Base styles are in tiptapExtensions.ts renderHTML
-                '& [data-header-label]': {
-                  // fontWeight: 'normal', // Already handled in renderHTML to prevent double bolding
-                },
-                '& [data-header-value]': {
-                  // fontWeight: 'normal', // Already handled in renderHTML
-                  // Placeholder for the editable value part
-                  '& p.is-editor-empty:first-child::before': {
-                    content: 'attr(data-placeholder)',
-                    float: 'left',
-                    color: theme.colors.gray[5],
-                    pointerEvents: 'none',
-                    height: 0,
-                  },
-                },
+                // Placeholder styling for editableHeader is handled by the general '.is-editor-empty:first-child::before'
+                // if the Placeholder extension correctly adds the class to the header node itself.
               },
 
-              // General placeholder for empty paragraphs not inside an editable header's value
-              // This selector is a bit complex and :has might not be universally supported.
-              // A simpler approach might be to style all p.is-editor-empty and rely on Tiptap's
-              // placeholder extension logic for which one actually displays.
-              // For now, keeping your more specific one, but be aware of :has support.
-              '& p.is-editor-empty:not(:has(ancestor::[data-editable-header="true"])):first-child::before': {
+              // General placeholder for any node that Tiptap marks as empty and provides a data-placeholder attribute.
+              // This should cover empty paragraphs and potentially empty editableHeaders if configured correctly.
+              '& .is-editor-empty:first-child::before': {
                 content: 'attr(data-placeholder)',
-                float: 'left',
-                color: theme.colors.gray[5],
-                pointerEvents: 'none',
-                height: 0,
+                float: 'left', // Required for Tiptap's default placeholder styling
+                color: theme.colors.gray[6], // Slightly darker for better visibility
+                pointerEvents: 'none', // Important to allow clicking "through" the placeholder
+                height: 0, // Required for Tiptap's default placeholder styling
+                fontStyle: 'italic', // Make placeholder text italic
+                // Example of adding some opacity:
+                // opacity: 0.8,
               },
             },
-             // General placeholder for the entire editor when it's empty
-             // This applies to the .ProseMirror element itself when it has the class
+            // General placeholder for the entire editor when it's empty
+            // This applies to the .ProseMirror element itself when it has the class 'is-editor-empty'
             '& .ProseMirror.is-editor-empty:first-child::before': {
-                content: 'attr(data-placeholder)',
-                position: 'absolute', // Position it within the ProseMirror container
-                left: theme.spacing.md, // Align with padding
-                top: theme.spacing.md,  // Align with padding
-                color: theme.colors.gray[5],
-                pointerEvents: 'none',
+              content: 'attr(data-placeholder)',
+              position: 'absolute', // Position it within the ProseMirror container
+              left: theme.spacing.md, // Align with padding
+              top: theme.spacing.md, // Align with padding
+              color: theme.colors.gray[6], // Slightly darker for better visibility
+              pointerEvents: 'none',
+              fontStyle: 'italic', // Make placeholder text italic
             },
           },
         })}
@@ -207,6 +198,6 @@ const CurriculumEditor: React.FC<CurriculumEditorProps> = ({ initialCourseData, 
       {/* Debugging Box ... */}
     </Stack>
   );
-};
+});
 
 export default CurriculumEditor;

@@ -1,7 +1,8 @@
 // src/App.tsx
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   AppShell,
+  Tooltip, // Added Tooltip
   Burger,
   Group,
   Title,
@@ -23,10 +24,12 @@ import {
   IconFolderOpen,
   IconAlertCircle,
   IconPlus,
+  IconMarkdown, // Added IconMarkdown
 } from '@tabler/icons-react';
 
-import CurriculumEditor from './components/CurriculumEditor/CurriculumEditor';
+import CurriculumEditor, { type CurriculumEditorRef } from './components/CurriculumEditor/CurriculumEditor';
 import ComparisonView from './components/ComparisonView/ComparisonView';
+import StatusBar from './components/StatusBar/StatusBar'; // Import StatusBar
 import type { Course, Unit } from './types';
 import {
   fetchCourseById,
@@ -44,7 +47,10 @@ import { type JSONContent } from '@tiptap/core';
 // This would typically go into a constants file (e.g., src/utils/constants.ts)
 // export const EMPTY_RICH_TEXT_CONTENT = () => ({ type: 'doc', content: [{ type: 'paragraph' }] });
 // Stored as string:
-export const EMPTY_ARRAY_JSON_STRING = JSON.stringify([]); // Represents empty content for a Tiptap field
+// export const EMPTY_ARRAY_JSON_STRING = JSON.stringify([]); // Represents empty content for a Tiptap field
+// Now imported from constants.ts
+import { EMPTY_ARRAY_JSON_STRING } from './utils/constants';
+
 
 type ViewMode = 'editor' | 'comparison';
 
@@ -52,6 +58,8 @@ function App() {
   const [mobileOpened, { toggle: toggleMobile }] = useDisclosure();
   const [desktopOpened, { toggle: toggleDesktop }] = useDisclosure(true);
   const [viewMode, setViewMode] = useState<ViewMode>('editor');
+
+  const editorRef = useRef<CurriculumEditorRef>(null); // Added editorRef
 
   const [coursesMetadata, setCoursesMetadata] = useState<CourseMetadata[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
@@ -112,9 +120,9 @@ function App() {
     }
   };
 
-  const handleSaveCourse = async (editorContent: JSONContent) => {
+  const handleSuggestChanges = async (editorContent: JSONContent) => {
     if (!currentCourse || !selectedCourseId) {
-      setError('No course loaded to save.');
+      setError('No course loaded to suggest changes for.');
       return;
     }
     setIsLoading(true);
@@ -131,13 +139,13 @@ function App() {
       }
 
       await saveCourse(id, saveData);
-      alert('Course saved successfully!');
+      alert('Changes suggested successfully!'); // Changed alert message
       // Update local state with the parsed data (which now has normalized rich text strings)
       setCurrentCourse(updatedCourseData);
       // Optionally, force editor refresh if normalization in tiptapJsonToCourse might change displayed content
       // setEditorKey(prev => prev + 1);
     } catch (err) {
-      setError(`Failed to save course: ${(err as Error).message}`);
+      setError(`Failed to suggest changes: ${(err as Error).message}`); // Changed error message
       console.error(err);
     } finally {
       setIsLoading(false);
@@ -148,8 +156,8 @@ function App() {
     setIsLoading(true);
     setError(null);
     try {
-      const newCourseId = `new_course_${Date.now()}`; // Or use Firestore's auto-ID generation
-      const newUnitId = `unit_${Date.now()}`;
+      // const newCourseId = `new_course_${Date.now()}`; // Or use Firestore's auto-ID generation
+      const newUnitId = `unit_${Date.now()}`; // This can remain locally generated for the unit within the course
 
       const newCourseData: Omit<Course, 'id'> = {
         title: "Untitled Course",
@@ -172,10 +180,11 @@ function App() {
           },
         ],
       };
-      await saveCourse(newCourseId, newCourseData); // Save to Firebase
+      // Call saveCourse with null to trigger auto-ID generation
+      const generatedCourseId = await saveCourse(null, newCourseData);
       alert('New course created! Loading it for editing...');
       await loadCourseMetadata(); // Refresh course list
-      handleLoadCourse(newCourseId); // Load the new course
+      handleLoadCourse(generatedCourseId); // Load the new course using the ID from Firebase
       setViewMode('editor'); // Switch to editor view
 
     } catch (err) {
@@ -216,7 +225,45 @@ function App() {
             visibleFrom="sm"
             size="sm"
           />
-          <Title order={3}>Curriculum Mapper</Title>
+          <Title order={3}>
+            Curriculum Mapper
+            {currentCourse && currentCourse.title && ` | ${currentCourse.title}`}
+          </Title>
+          <Group ml="auto"> {/* Group for action buttons */}
+            {viewMode === 'editor' && currentCourse && (
+              <>
+                <Tooltip label="Add a new unit" withArrow>
+                  <Button
+                    variant="light"
+                    onClick={() => editorRef.current?.triggerAddUnit()}
+                    disabled={!currentCourse || isLoading}
+                    leftSection={<IconPlus size={16} />}
+                  >
+                    Add Unit
+                  </Button>
+                </Tooltip>
+                <Tooltip label="Copy content as Markdown" withArrow>
+                  <Button
+                    variant="outline"
+                    onClick={() => editorRef.current?.triggerCopyMarkdown()}
+                    disabled={!currentCourse || isLoading}
+                    leftSection={<IconMarkdown size={16} />}
+                  >
+                    Copy Markdown
+                  </Button>
+                </Tooltip>
+                <Tooltip label="Submit your suggested changes" withArrow>
+                  <Button
+                    onClick={() => editorRef.current?.triggerSuggestChanges()}
+                    disabled={!currentCourse || isLoading}
+                    leftSection={<IconDeviceFloppy size={16} />}
+                  >
+                    Suggest Changes
+                  </Button>
+                </Tooltip>
+              </>
+            )}
+          </Group>
         </Group>
       </AppShell.Header>
 
@@ -314,28 +361,47 @@ function App() {
           </Alert>
         )}
 
-        {viewMode === 'editor' && currentCourse && selectedCourseId &&(
+        {viewMode === 'editor' && (
+          <>
+            <StatusBar currentCourse={currentCourse} /> 
+            {currentCourse && selectedCourseId && (
+              <CurriculumEditor
+                ref={editorRef} // Pass the ref
+                key={editorKey} // Force re-mount when course changes for proper Tiptap init
+                initialCourseData={currentCourse}
+                onSave={handleSuggestChanges} 
+                courseId={selectedCourseId}
+              />
+            )}
+            {!currentCourse && !isLoading && (
+              <Paper p="xl" withBorder style={{ textAlign: 'center' }}>
+                <IconFolderOpen
+                  size={48}
+                  stroke={1.5}
+                  style={{ marginBottom: '1rem', color: 'var(--mantine-color-gray-6)' }}
+                />
+                <Title order={4}>No course selected</Title>
+                <Text c="dimmed">
+                  Please select a course from the sidebar or create a new one to
+                  start editing.
+                </Text>
+              </Paper>
+            )}
+          </>
+        )}
+        {/* This part for CurriculumEditor and the "No course selected" message was restructured */}
+        {/* {viewMode === 'editor' && currentCourse && selectedCourseId &&(
           <CurriculumEditor
+            ref={editorRef} // Pass the ref
             key={editorKey} // Force re-mount when course changes for proper Tiptap init
             initialCourseData={currentCourse}
-            onSave={handleSaveCourse}
+            onSave={handleSuggestChanges} 
             courseId={selectedCourseId}
           />
-        )}
-        {viewMode === 'editor' && !currentCourse && !isLoading && (
-          <Paper p="xl" withBorder style={{ textAlign: 'center' }}>
-            <IconFolderOpen
-              size={48}
-              stroke={1.5}
-              style={{ marginBottom: '1rem', color: 'var(--mantine-color-gray-6)' }}
-            />
-            <Title order={4}>No course selected</Title>
-            <Text c="dimmed">
-              Please select a course from the sidebar or create a new one to
-              start editing.
-            </Text>
-          </Paper>
-        )}
+        )} */}
+        {/* {viewMode === 'editor' && !currentCourse && !isLoading && (
+          // This is now handled inside the new viewMode === 'editor' block
+        )} */}
 
         {viewMode === 'comparison' && (
           <ComparisonView docId1={compareDocId1} docId2={compareDocId2} />

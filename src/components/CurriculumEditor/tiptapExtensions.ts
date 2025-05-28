@@ -219,21 +219,29 @@ export const editorExtensions = [
   UnmodifiableHeaderNode,
   EditableHeaderNode,
   Placeholder.configure({
-    // Show placeholder if the entire editor is empty
-    emptyEditorClass: 'is-editor-empty',
+    emptyEditorClass: 'is-editor-empty', // Class for the entire editor when empty
     placeholder: ({ node, editor }) => {
-      if (editor.isEmpty) { // Check if the entire editor is empty
+      // General placeholder for the entire editor if it's completely empty
+      if (editor.isEmpty) {
         return 'Start building your curriculum here...';
       }
+
+      // Placeholder for empty editable header values
       if (node.type.name === 'editableHeader' && node.content.size === 0) {
-        return 'Type here...';
+        return 'Enter text here...'; // Changed
       }
-      // Placeholder for empty paragraphs that are not part of an editableHeader's value
-      if (node.type.name === 'paragraph' && !node.textContent && node.content.size === 0 && !(node.parent?.type.name === 'editableHeader')) {
-        return 'Add content for this section...';
+
+      // Placeholder for standard empty paragraphs that are direct children of the doc
+      // and not part of other structures like list items, blockquotes etc.
+      // and not inside an editableHeader (already handled)
+      // Ensure node.parent exists before checking node.parent.type.name
+      if (node.type.name === 'paragraph' && node.content.size === 0 && node.parent && node.parent.type.name === 'doc') {
+          return 'Enter text here...'; // Changed
       }
-      return null;
+
+      return null; // No placeholder for other cases
     },
+    includeChildren: true, // Important for nested structures if any
   }),
   AddUnitCommandExtension,
 ];
