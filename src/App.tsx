@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   AppShell,
-  Tooltip, // Added Tooltip
+  Tooltip,
   Burger,
   Group,
   Title,
@@ -15,7 +15,7 @@ import {
   Paper,
   Text,
   Box,
-  Tabs, // Added Tabs
+  // Tabs, // Tabs component not directly used for page structure here
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import {
@@ -25,12 +25,13 @@ import {
   IconFolderOpen,
   IconAlertCircle,
   IconPlus,
-  IconMarkdown, // Added IconMarkdown
+  IconMarkdown,
 } from '@tabler/icons-react';
 
+// Make sure CurriculumEditorRef is exported from CurriculumEditor.tsx
 import CurriculumEditor, { type CurriculumEditorRef } from './components/CurriculumEditor/CurriculumEditor';
 import ComparisonView from './components/ComparisonView/ComparisonView';
-import StatusBar from './components/StatusBar/StatusBar'; // Import StatusBar
+// import StatusBar from './components/StatusBar/StatusBar'; // StatusBar imported but not used
 import type { Course, Unit } from './types';
 import {
   fetchCourseById,
@@ -39,16 +40,16 @@ import {
   type CourseMetadata,
 } from './firebase';
 import {
-  courseToTiptapJson,
+  // courseToTiptapJson, // Not used directly in App.tsx
   tiptapJsonToCourse,
 } from './components/CurriculumEditor/courseSerializer';
 import { type JSONContent } from '@tiptap/core';
 
-// Define a constant for initializing empty rich text fields.
-// This would typically go into a constants file (e.g., src/utils/constants.ts)
-// export const EMPTY_RICH_TEXT_CONTENT = () => ({ type: 'doc', content: [{ type: 'paragraph' }] });
-// Stored as string:
-export const EMPTY_ARRAY_JSON_STRING = JSON.stringify([]); // Represents empty content for a Tiptap field
+
+export const EMPTY_ARRAY_JSON_STRING = JSON.stringify([]);
+
+// FIX: Define COURSE_HEADER_SECTION_ID (ensure this ID matches an actual element ID in your Tiptap content)
+const COURSE_HEADER_SECTION_ID = 'course-overview-header'; // Example ID
 
 type ViewMode = 'editor' | 'comparison';
 
@@ -60,43 +61,39 @@ function App() {
   const [coursesMetadata, setCoursesMetadata] = useState<CourseMetadata[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [currentCourse, setCurrentCourse] = useState<Course | null>(null);
-  const [editorKey, setEditorKey] = useState<number>(0); // To force re-render Tiptap
+  const [editorKey, setEditorKey] = useState<number>(0);
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // For comparison view
   const [compareDocId1, setCompareDocId1] = useState<string | null>(null);
   const [compareDocId2, setCompareDocId2] = useState<string | null>(null);
 
-  // Effect for scrolling when activeTab, currentCourse, or editorKey changes
+  // FIX: Declare activeTab state
+  const [activeTab, setActiveTab] = useState<string>('overall');
+  // FIX: Declare editorRef
+  const editorRef = useRef<CurriculumEditorRef>(null);
+
   useEffect(() => {
-    // Only scroll if in editor view, an editor instance exists, a course is loaded, and a tab is active
     if (viewMode === 'editor' && editorRef.current && currentCourse && activeTab) {
-      // The editorKey dependency helps ensure this runs after the editor might have been re-keyed/re-mounted.
-      // The activeTab dependency ensures it runs when the tab changes.
-      // currentCourse dependency ensures it runs if the course itself changes (though editorKey handles this too).
-
-      // No explicit timeout needed initially, as the re-keying of CurriculumEditor per tab
-      // and this useEffect's dependencies should manage the timing.
-      // The scrollToSection method in CurriculumEditor has its own requestAnimationFrame fallback.
-
-      if (activeTab === 'overall') {
-        editorRef.current.scrollToSection(COURSE_HEADER_SECTION_ID);
-      } else {
-        // Check if the activeTab corresponds to a valid unit ID before scrolling
-        const unitExists = currentCourse.units?.find(unit => unit.id === activeTab);
-        if (unitExists) {
-          editorRef.current.scrollToSection(activeTab);
-        } else {
-          // This case should ideally not happen if tabs are generated from currentCourse.units.
-          // But as a safeguard or if activeTab could be set to an invalid unit ID elsewhere:
-          console.warn(`Unit with ID "${activeTab}" not found for scrolling. Scrolling to course header as fallback.`);
+      // Ensure the method exists on the ref before calling
+      if (typeof editorRef.current.scrollToSection === 'function') {
+        if (activeTab === 'overall') {
           editorRef.current.scrollToSection(COURSE_HEADER_SECTION_ID);
+        } else {
+          const unitExists = currentCourse.units?.find(unit => unit.id === activeTab);
+          if (unitExists) {
+            editorRef.current.scrollToSection(activeTab);
+          } else {
+            console.warn(`Unit with ID "${activeTab}" not found for scrolling. Scrolling to course header as fallback.`);
+            editorRef.current.scrollToSection(COURSE_HEADER_SECTION_ID);
+          }
         }
+      } else {
+        console.warn("scrollToSection method is not available on editorRef.current");
       }
     }
-  }, [activeTab, currentCourse, editorKey, viewMode, editorRef]); // editorRef is stable, but good to list explicit dependencies.
+  }, [activeTab, currentCourse, editorKey, viewMode]); // editorRef is stable, so not strictly needed in deps
 
   const loadCourseMetadata = useCallback(async () => {
     setIsLoading(true);
@@ -119,8 +116,8 @@ function App() {
     if (!courseId) {
       setCurrentCourse(null);
       setSelectedCourseId(null);
-      setEditorKey((prev) => prev + 1); // Reset editor
-      setActiveTab('overall'); // Reset tab to overall
+      setEditorKey((prev) => prev + 1);
+      setActiveTab('overall');
       return;
     }
     setIsLoading(true);
@@ -130,19 +127,20 @@ function App() {
       if (courseData) {
         setCurrentCourse(courseData);
         setSelectedCourseId(courseId);
-        setEditorKey((prev) => prev + 1); // Force re-initialization of Tiptap editor
-        setActiveTab('overall'); // Reset tab to overall when new course loads
+        setEditorKey((prev) => prev + 1);
+        setActiveTab('overall');
       } else {
         setError(`Course with ID ${courseId} not found.`);
         setCurrentCourse(null);
         setSelectedCourseId(null);
-        setActiveTab('overall'); // Reset tab
+        setActiveTab('overall');
       }
     } catch (err) {
       setError('Failed to load course.');
       console.error(err);
       setCurrentCourse(null);
       setSelectedCourseId(null);
+      setActiveTab('overall'); // Reset tab on error
     } finally {
       setIsLoading(false);
     }
@@ -151,30 +149,26 @@ function App() {
   const handleSuggestChanges = async (editorContent: JSONContent) => {
     if (!currentCourse || !selectedCourseId) {
       setError('No course loaded to suggest changes for.');
-      return;
+      return; // Potentially throw to be caught by CurriculumEditor if it handles Promise rejection
     }
     setIsLoading(true);
     setError(null);
     try {
-      // currentCourse already contains stringified JSON for rich text fields (from load or previous save)
-      // tiptapJsonToCourse expects the base course structure.
       const updatedCourseData = tiptapJsonToCourse(editorContent, currentCourse);
-
-      // Remove 'id' before saving to Firestore, as it's the document key
       const { id, ...saveData } = updatedCourseData;
       if (!id) {
         throw new Error('Course ID is missing for saving.');
       }
-
       await saveCourse(id, saveData);
-      alert('Changes suggested successfully!'); // Changed alert message
-      // Update local state with the parsed data (which now has normalized rich text strings)
+      // alert('Changes suggested successfully!'); // Notification is now in CurriculumEditor or can be here
       setCurrentCourse(updatedCourseData);
-      // Optionally, force editor refresh if normalization in tiptapJsonToCourse might change displayed content
-      // setEditorKey(prev => prev + 1);
+      // Optionally, show notification here if not in CurriculumEditor
+      // notifications.show({ title: 'Success', message: 'Changes saved!', color: 'green' });
     } catch (err) {
-      setError(`Failed to suggest changes: ${(err as Error).message}`); // Changed error message
+      const errorMessage = (err instanceof Error) ? err.message : 'Unknown error during save.';
+      setError(`Failed to suggest changes: ${errorMessage}`);
       console.error(err);
+      throw err; // Re-throw so CurriculumEditor's catch block can also react if needed
     } finally {
       setIsLoading(false);
     }
@@ -184,9 +178,7 @@ function App() {
     setIsLoading(true);
     setError(null);
     try {
-      // const newCourseId = `new_course_${Date.now()}`; // Or use Firestore's auto-ID generation
-      const newUnitId = `unit_${Date.now()}`; // This can remain locally generated for the unit within the course
-
+      const newUnitId = `unit_${Date.now()}`;
       const newCourseData: Omit<Course, 'id'> = {
         title: "Untitled Course",
         name: "NEW001",
@@ -208,13 +200,11 @@ function App() {
           },
         ],
       };
-      // Call saveCourse with null to trigger auto-ID generation
       const generatedCourseId = await saveCourse(null, newCourseData);
       alert('New course created! Loading it for editing...');
-      await loadCourseMetadata(); // Refresh course list
-      handleLoadCourse(generatedCourseId); // Load the new course using the ID from Firebase
-      setViewMode('editor'); // Switch to editor view
-
+      await loadCourseMetadata();
+      handleLoadCourse(generatedCourseId);
+      setViewMode('editor');
     } catch (err) {
         setError(`Failed to create new course: ${(err as Error).message}`);
         console.error(err);
@@ -222,7 +212,6 @@ function App() {
         setIsLoading(false);
     }
   };
-
 
   const courseOptions = coursesMetadata.map((meta) => ({
     value: meta.id,
@@ -241,26 +230,14 @@ function App() {
     >
       <AppShell.Header>
         <Group h="100%" px="md">
-          <Burger
-            opened={mobileOpened}
-            onClick={toggleMobile}
-            hiddenFrom="sm"
-            size="sm"
-          />
-          <Burger
-            opened={desktopOpened}
-            onClick={toggleDesktop}
-            visibleFrom="sm"
-            size="sm"
-          />
+          <Burger opened={mobileOpened} onClick={toggleMobile} hiddenFrom="sm" size="sm" />
+          <Burger opened={desktopOpened} onClick={toggleDesktop} visibleFrom="sm" size="sm" />
           <Title order={3}>Curriculum Mapper</Title>
         </Group>
       </AppShell.Header>
 
       <AppShell.Navbar p="md">
-        <Title order={4} mb="sm">
-          Navigation
-        </Title>
+        <Title order={4} mb="sm">Navigation</Title>
         <NavLink
           href="#editor"
           label="Curriculum Editor"
@@ -275,38 +252,35 @@ function App() {
           active={viewMode === 'comparison'}
           onClick={() => setViewMode('comparison')}
         />
-
         <Stack mt="xl" gap="md">
-            <Title order={5}>Course Actions</Title>
-             <Button
-                leftSection={<IconPlus size="1rem" />}
-                onClick={handleCreateNewCourse}
-                variant="outline"
-                disabled={isLoading}
-            >
-                New Course
-            </Button>
-            <Select
-              label="Load Existing Course"
-              placeholder="Pick a course"
-              data={courseOptions}
-              value={selectedCourseId}
-              onChange={(value) => {
-                if (value) handleLoadCourse(value);
-                else { // Handle clear
-                    setCurrentCourse(null);
-                    setSelectedCourseId(null);
-                    setEditorKey(k => k + 1);
-                    setActiveTab('overall'); // Reset tab on clear
-                }
-              }}
-              disabled={isLoading}
-              searchable
-              clearable
-            />
+          <Title order={5}>Course Actions</Title>
+          <Button
+            leftSection={<IconPlus size="1rem" />}
+            onClick={handleCreateNewCourse}
+            variant="outline"
+            disabled={isLoading}
+          >
+            New Course
+          </Button>
+          <Select
+            label="Load Existing Course"
+            placeholder="Pick a course"
+            data={courseOptions}
+            value={selectedCourseId}
+            onChange={(value) => {
+              if (value) handleLoadCourse(value);
+              else {
+                setCurrentCourse(null);
+                setSelectedCourseId(null);
+                setEditorKey(k => k + 1);
+                setActiveTab('overall');
+              }
+            }}
+            disabled={isLoading}
+            searchable
+            clearable
+          />
         </Stack>
-
-
         {viewMode === 'comparison' && (
           <Stack mt="xl" gap="md">
             <Title order={5}>Comparison Setup</Title>
@@ -335,10 +309,7 @@ function App() {
       </AppShell.Navbar>
 
       <AppShell.Main>
-        <LoadingOverlay
-          visible={isLoading}
-          overlayProps={{ radius: 'sm', blur: 2 }}
-        />
+        <LoadingOverlay visible={isLoading} overlayProps={{ radius: 'sm', blur: 2 }} />
         {error && (
           <Alert
             icon={<IconAlertCircle size="1rem" />}
@@ -352,29 +323,22 @@ function App() {
           </Alert>
         )}
 
-        {viewMode === 'editor' && currentCourse && selectedCourseId &&(
+        {viewMode === 'editor' && currentCourse && selectedCourseId && (
           <CurriculumEditor
-            key={editorKey} // Force re-mount when course changes for proper Tiptap init
+            ref={editorRef} // FIX: Pass the ref
+            key={editorKey}
             initialCourseData={currentCourse}
-            onSave={handleSaveCourse}
+            onSave={handleSuggestChanges} // FIX: Correct onSave handler
             courseId={selectedCourseId}
           />
         )}
         {viewMode === 'editor' && !currentCourse && !isLoading && (
           <Paper p="xl" withBorder style={{ textAlign: 'center' }}>
-            <IconFolderOpen
-              size={48}
-              stroke={1.5}
-              style={{ marginBottom: '1rem', color: 'var(--mantine-color-gray-6)' }}
-            />
+            <IconFolderOpen size={48} stroke={1.5} style={{ marginBottom: '1rem', color: 'var(--mantine-color-gray-6)' }} />
             <Title order={4}>No course selected</Title>
-            <Text c="dimmed">
-              Please select a course from the sidebar or create a new one to
-              start editing.
-            </Text>
+            <Text c="dimmed">Please select a course from the sidebar or create a new one to start editing.</Text>
           </Paper>
         )}
-
         {viewMode === 'comparison' && (
           <ComparisonView docId1={compareDocId1} docId2={compareDocId2} />
         )}
