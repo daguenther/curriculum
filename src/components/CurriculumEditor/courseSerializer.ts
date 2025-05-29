@@ -1,221 +1,343 @@
-// src/components/CurriculumEditor/courseSerializer.ts
-import { type JSONContent } from '@tiptap/core';
-import type { Course, Unit } from '../../types';
-import { EMPTY_RICH_TEXT_DATA, EMPTY_PLAIN_TEXT_DATA, EMPTY_PARAGRAPH_NODE_ARRAY } from '../../utils/constants';
+import { type JSONContent } from '@tiptap/react';
+import { type Course, type Unit } from '../../types';
+// Assuming EMPTY_ARRAY_JSON_STRING is correctly imported, e.g., from a shared constants file
+// For now, keeping the App.tsx import path, but a constants file is better.
+import { EMPTY_ARRAY_JSON_STRING } from '../../App';
 
-export const COURSE_HEADER_SECTION_ID = 'course-header-section'; // For scrolling
+export const COURSE_HEADER_SECTION_ID = 'course-overview-header';
 
 export enum FieldType {
-  PlainText = 'PlainText',
-  RichText = 'RichText',
-  EditableHeader = 'EditableHeader'
+  EditableHeader = 'editableHeader',
+  RichText = 'richText',
+  PlainText = 'plainText',
 }
 
-// Added isScrollTarget to relevant field configs
-export const fieldConfig: Record<string, Record<string, { type: FieldType; label: string; isScrollTarget?: boolean }>> = {
+export interface FieldConfigItem {
+  label: string;
+  type: FieldType;
+  defaultLevel?: number;
+  isSectionHeader?: boolean;
+}
+
+export const fieldConfig = {
   course: {
-    title: { type: FieldType.EditableHeader, label: "Course Title: ", isScrollTarget: true },
-    name: { type: FieldType.EditableHeader, label: "Course Name/Code: " },
-    description: { type: FieldType.RichText, label: "Description" },
-    biblicalBasis: { type: FieldType.RichText, label: "Biblical Basis" },
-    materials: { type: FieldType.RichText, label: "Materials" },
-    pacing: { type: FieldType.RichText, label: "Pacing Guide" },
-  },
+    title: { label: 'Course Title:', type: FieldType.EditableHeader, defaultLevel: 1, isSectionHeader: true } as FieldConfigItem,
+    name: { label: 'Course Name/Code:', type: FieldType.EditableHeader, defaultLevel: 3, isSectionHeader: false } as FieldConfigItem,
+    description: { label: 'Description', type: FieldType.RichText, isSectionHeader: true } as FieldConfigItem,
+    biblicalBasis: { label: 'Biblical Basis', type: FieldType.RichText, isSectionHeader: true } as FieldConfigItem,
+    materials: { label: 'Materials', type: FieldType.RichText, isSectionHeader: true } as FieldConfigItem,
+    pacing: { label: 'Pacing', type: FieldType.RichText, isSectionHeader: true } as FieldConfigItem,
+  } as Record<keyof Omit<Course, 'id' | 'units' >, FieldConfigItem>,
   unit: {
-    unitName: { type: FieldType.EditableHeader, label: "Unit Name: ", isScrollTarget: true },
-    timeAllotted: { type: FieldType.PlainText, label: "Time Allotted" },
-    learningObjectives: { type: FieldType.RichText, label: "Learning Objectives" },
-    standards: { type: FieldType.RichText, label: "Standards" },
-    biblicalIntegration: { type: FieldType.RichText, label: "Biblical Integration" },
-    instructionalStrategiesActivities: { type: FieldType.RichText, label: "Instructional Strategies & Activities" },
-    resources: { type: FieldType.RichText, label: "Resources" },
-    assessments: { type: FieldType.RichText, label: "Assessments" },
-  }
+    unitName: { label: 'Unit Name:', type: FieldType.EditableHeader, defaultLevel: 2, isSectionHeader: true } as FieldConfigItem,
+    timeAllotted: { label: 'Time Allotted:', type: FieldType.PlainText, isSectionHeader: false } as FieldConfigItem, // This will be a paragraph
+    learningObjectives: { label: 'Learning Objectives', type: FieldType.RichText, isSectionHeader: true } as FieldConfigItem,
+    standards: { label: 'Standards', type: FieldType.RichText, isSectionHeader: true } as FieldConfigItem,
+    biblicalIntegration: { label: 'Biblical Integration', type: FieldType.RichText, isSectionHeader: true } as FieldConfigItem,
+    instructionalStrategiesActivities: { label: 'Instructional Strategies & Activities', type: FieldType.RichText, isSectionHeader: true } as FieldConfigItem,
+    resources: { label: 'Resources', type: FieldType.RichText, isSectionHeader: true } as FieldConfigItem,
+    assessments: { label: 'Assessments', type: FieldType.RichText, isSectionHeader: true } as FieldConfigItem,
+  } as Record<keyof Omit<Unit, 'id'>, FieldConfigItem>,
 };
 
-function createUnmodifiableHeaderNode(label: string, level: number, fieldKey: string): JSONContent {
-  return { type: 'unmodifiableHeader', attrs: { label, level, fieldKey } };
-}
-
-// Modified to include sectionId
-function createEditableHeaderNode(
-  staticLabel: string,
-  initialValue: string | null | undefined,
-  level: number,
-  fieldKey: string,
-  sectionId?: string // Optional sectionId parameter
-): JSONContent {
-  const contentNodes: JSONContent[] = (initialValue && initialValue.trim() !== '') ? [{ type: 'text', text: initialValue }] : [];
-  const attrs: Record<string, any> = { label: staticLabel, level, fieldKey };
-  if (sectionId) {
-    attrs.sectionId = sectionId; // Add sectionId to attributes if provided
-  }
-  return { type: 'editableHeader', attrs, content: contentNodes };
-}
-
-function createContentNodesForField(contentValue: string | null | undefined, fieldType: FieldType.PlainText | FieldType.RichText, fieldKeyForDebug: string): JSONContent[] {
-  if (contentValue === null || contentValue === undefined || (typeof contentValue === 'string' && contentValue.trim() === '')) {
-    return [...EMPTY_PARAGRAPH_NODE_ARRAY]; // Return a copy
-  }
-  if (fieldType === FieldType.RichText) {
-    try {
-      const parsedJson = JSON.parse(contentValue as string);
-      if (Array.isArray(parsedJson) && parsedJson.length === 0) return [...EMPTY_PARAGRAPH_NODE_ARRAY];
-      if (Array.isArray(parsedJson)) return parsedJson;
-      if (parsedJson.type === 'doc' && Array.isArray(parsedJson.content)) {
-        return parsedJson.content.length > 0 ? parsedJson.content : [...EMPTY_PARAGRAPH_NODE_ARRAY];
-      }
-      console.warn(`Field ${fieldKeyForDebug} (RichText) had unexpected JSON structure. Content:`, contentValue);
-      return [{ type: 'paragraph', content: [{ type: 'text', text: String(contentValue) }] }];
-    } catch (e) {
-      console.warn(`Failed to parse rich text JSON for ${fieldKeyForDebug}. Error:`, e, `Content:`, contentValue);
-      return [{ type: 'paragraph', content: [{ type: 'text', text: String(contentValue) }] }];
-    }
-  } else { // PlainText
-    return [{ type: 'paragraph', content: [{ type: 'text', text: String(contentValue) }] }];
-  }
-}
 
 export function courseToTiptapJson(course: Course): JSONContent {
   const content: JSONContent[] = [];
-  const addSection = (
-    fullFieldKey: string,
-    value: string | null | undefined,
-    config: { type: FieldType; label: string; isScrollTarget?: boolean }, // Updated config type
-    level: number,
-    unitIdForScrollTarget?: string // To pass unit.id for unitName scroll target
+
+  // --- COURSE LEVEL FIELDS ---
+
+  // Course Title (Editable Header)
+  const courseTitleText = course.title || '';
+  content.push({
+    type: 'editableHeader',
+    attrs: {
+      level: fieldConfig.course.title.defaultLevel || 1,
+      label: fieldConfig.course.title.label,
+      fieldKey: 'course.title',
+      sectionId: COURSE_HEADER_SECTION_ID,
+    },
+    // FIX: If text is empty, content array is empty
+    content: courseTitleText ? [{ type: 'text', text: courseTitleText }] : [],
+  });
+
+  // Course Name (Editable Header)
+  const courseNameText = course.name || '';
+  content.push({
+    type: 'editableHeader',
+    attrs: {
+      level: fieldConfig.course.name.defaultLevel || 3,
+      label: fieldConfig.course.name.label,
+      fieldKey: 'course.name',
+    },
+    // FIX: If text is empty, content array is empty
+    content: courseNameText ? [{ type: 'text', text: courseNameText }] : [],
+  });
+
+  // Helper to add RichText sections for Course
+  const addCourseRichTextSection = (
+    fieldKey: keyof Omit<Course, 'id' | 'title' | 'name' | 'units'>,
+    data: string | undefined | null
   ) => {
-    if (config.type === FieldType.EditableHeader) {
-      let sectionId: string | undefined = undefined;
-      if (config.isScrollTarget) {
-        if (fullFieldKey === 'course.title') {
-          sectionId = COURSE_HEADER_SECTION_ID;
-        } else if (unitIdForScrollTarget && fieldConfig.unit[fullFieldKey.split('.')[2]]?.isScrollTarget) {
-           // Ensure it's the unitName field specifically that gets unit.id as sectionId
-           if (fullFieldKey.endsWith('.unitName')) {
-             sectionId = unitIdForScrollTarget;
-           }
-        }
+    const config = fieldConfig.course[fieldKey];
+    if (!config) {
+        console.warn(`No fieldConfig for course field: ${String(fieldKey)}`);
+        return;
+    }
+    // This header introduces the section
+    content.push({
+      type: 'unmodifiableHeader',
+      attrs: { level: 2, label: config.label, fieldKey: `course.${String(fieldKey)}.header` },
+    });
+
+    try {
+      const jsonData = JSON.parse(data || EMPTY_ARRAY_JSON_STRING);
+      if (jsonData.type === 'doc' && Array.isArray(jsonData.content) && jsonData.content.length > 0) {
+        content.push(...jsonData.content);
+      } else if (Array.isArray(jsonData) && jsonData.length > 0) { // Assumes jsonData is an array of Tiptap nodes
+        content.push(...jsonData);
+      } else if (jsonData.type && jsonData.content) { // Single node object with content
+        content.push(jsonData);
+      } else { // Handles EMPTY_ARRAY_JSON_STRING (parsed to []), or empty/invalid doc/array
+        content.push({ type: 'paragraph' }); // Add a single empty paragraph
       }
-      content.push(createEditableHeaderNode(config.label, value, level, fullFieldKey, sectionId));
-    } else {
-      content.push(createUnmodifiableHeaderNode(config.label, level, fullFieldKey));
-      content.push(...createContentNodesForField(value, config.type as FieldType.PlainText | FieldType.RichText, `${fullFieldKey}.content`));
+    } catch (e) {
+      console.warn(`Failed to parse JSON for course field ${String(fieldKey)}, adding empty paragraph. Data:`, data, "Error:", e);
+      // FIX: If data was a string but invalid JSON, create an empty paragraph, or a paragraph with the text if it's not empty.
+      const fallbackText = (typeof data === 'string' && data.trim() !== '') ? data : '';
+      content.push({ type: 'paragraph', content: fallbackText ? [{ type: 'text', text: fallbackText }] : [] });
     }
   };
 
-  addSection('course.title', course.title, fieldConfig.course.title, 1);
-  addSection('course.name', course.name, fieldConfig.course.name, 2);
-  addSection('course.description', course.description, fieldConfig.course.description, 2);
-  addSection('course.biblicalBasis', course.biblicalBasis, fieldConfig.course.biblicalBasis, 2);
-  addSection('course.materials', course.materials, fieldConfig.course.materials, 2);
-  addSection('course.pacing', course.pacing, fieldConfig.course.pacing, 2);
+  addCourseRichTextSection('description', course.description);
+  addCourseRichTextSection('biblicalBasis', course.biblicalBasis);
+  addCourseRichTextSection('materials', course.materials);
+  addCourseRichTextSection('pacing', course.pacing);
 
-  if (course.units && course.units.length > 0) {
-    content.push(createUnmodifiableHeaderNode('Units Overview', 1, `course.unitsHeader`)); // This header is not a scroll target
-    course.units.forEach((unit, unitIndex) => {
-      const unitBaseKey = `unit.${unitIndex}`;
-      Object.keys(fieldConfig.unit).forEach(fieldNameKey => {
-        const config = fieldConfig.unit[fieldNameKey];
-        const unitFieldValue = unit[fieldNameKey as keyof Unit] as string | null | undefined;
-        const fieldLevel = fieldNameKey === 'unitName' ? 2 : 3;
-        // Pass unit.id if the field is a scroll target (specifically for unitName)
-        const unitIdForScroll = (config.isScrollTarget && unit.id && fieldNameKey === 'unitName') ? unit.id : undefined;
-        addSection(`${unitBaseKey}.${fieldNameKey}`, unitFieldValue, config, fieldLevel, unitIdForScroll);
-      });
+
+  // --- UNITS ---
+  (course.units || []).forEach((unit) => {
+    // Unit Name (Editable Header)
+    const unitNameText = unit.unitName || '';
+    content.push({
+      type: 'editableHeader',
+      attrs: {
+        level: fieldConfig.unit.unitName.defaultLevel || 2,
+        label: fieldConfig.unit.unitName.label,
+        fieldKey: `unit.${unit.id}.unitName`,
+        sectionId: unit.id, // Crucial for scrolling and identification
+      },
+      // FIX: If text is empty, content array is empty
+      content: unitNameText ? [{ type: 'text', text: unitNameText }] : [],
     });
-  }
+
+    // Unit Time Allotted (PlainText, represented by an UnmodifiableHeader and a Paragraph)
+    const timeAllottedConfig = fieldConfig.unit.timeAllotted;
+    content.push({
+        type: 'unmodifiableHeader',
+        attrs: { level: 3, label: timeAllottedConfig.label, fieldKey: `unit.${unit.id}.timeAllotted.header` },
+    });
+    const timeAllottedText = unit.timeAllotted || '';
+    content.push({
+        type: 'paragraph', // This paragraph node will hold the timeAllotted text
+        attrs: { fieldKey: `unit.${unit.id}.timeAllotted.content` }, // Add a fieldKey for easier parsing back
+        // FIX: If text is empty, content array is empty for the paragraph
+        content: timeAllottedText ? [{ type: 'text', text: timeAllottedText }] : [],
+    });
+
+
+    // Other Unit fields (RichText)
+    const unitRichTextFieldKeys: Array<keyof Omit<Unit, 'id' | 'unitName' | 'timeAllotted'>> = [
+      'learningObjectives', 'standards', 'biblicalIntegration',
+      'instructionalStrategiesActivities', 'resources', 'assessments'
+    ];
+
+    unitRichTextFieldKeys.forEach(fieldKey => {
+      const config = fieldConfig.unit[fieldKey];
+      const unitData = unit[fieldKey] as string | undefined | null;
+
+      if (config && config.type === FieldType.RichText) {
+        content.push({
+          type: 'unmodifiableHeader',
+          attrs: { level: 3, label: config.label, fieldKey: `unit.${unit.id}.${String(fieldKey)}.header` },
+        });
+        try {
+          const jsonData = JSON.parse(unitData || EMPTY_ARRAY_JSON_STRING);
+          if (jsonData.type === 'doc' && Array.isArray(jsonData.content) && jsonData.content.length > 0) {
+            content.push(...jsonData.content);
+          } else if (Array.isArray(jsonData) && jsonData.length > 0) {
+            content.push(...jsonData);
+          } else if (jsonData.type && jsonData.content) {
+            content.push(jsonData);
+          } else {
+            content.push({ type: 'paragraph' });
+          }
+        } catch (e) {
+          console.warn(`Failed to parse JSON for unit ${unit.id} field ${String(fieldKey)}, adding empty paragraph. Data:`, unitData, "Error:", e);
+          const fallbackText = (typeof unitData === 'string' && unitData.trim() !== '') ? unitData : '';
+          content.push({ type: 'paragraph', content: fallbackText ? [{ type: 'text', text: fallbackText }] : [] });
+        }
+      }
+    });
+  });
+
   return { type: 'doc', content };
 }
 
-function extractTextFromNodes(nodes: JSONContent[] | undefined): string {
-  if (!nodes) return '';
-  return nodes.map(node => {
-    if (node.type === 'text' && typeof node.text === 'string') return node.text;
-    if (node.content && Array.isArray(node.content)) return extractTextFromNodes(node.content);
-    return '';
-  }).join('');
-}
 
-export function tiptapJsonToCourse(tiptapJson: JSONContent, baseCourseData: Course): Course {
-  const newCourse: Course = JSON.parse(JSON.stringify(baseCourseData));
-  if (!newCourse.units) newCourse.units = [];
-
-  const nodes = tiptapJson.content || [];
-  let currentNodeIndex = 0;
-
-  const getOrCreateUnit = (index: number): Unit => {
-    while (newCourse.units.length <= index) {
-      const defaultUnitName = `Unit ${newCourse.units.length + 1}`; // Temporary name
-      newCourse.units.push({
-        unitName: defaultUnitName, // Will be overwritten by EditableHeader's content
-        timeAllotted: EMPTY_PLAIN_TEXT_DATA,
-        learningObjectives: EMPTY_RICH_TEXT_DATA,
-        standards: EMPTY_RICH_TEXT_DATA,
-        biblicalIntegration: EMPTY_RICH_TEXT_DATA,
-        instructionalStrategiesActivities: EMPTY_RICH_TEXT_DATA,
-        resources: EMPTY_RICH_TEXT_DATA,
-        assessments: EMPTY_RICH_TEXT_DATA,
-      });
-    }
-    return newCourse.units[index];
+export function tiptapJsonToCourse(json: JSONContent, originalCourse: Course): Course {
+  const newCourse: Course = {
+    ...originalCourse, // Keep original ID
+    title: '', name: '', description: EMPTY_ARRAY_JSON_STRING,
+    biblicalBasis: EMPTY_ARRAY_JSON_STRING, materials: EMPTY_ARRAY_JSON_STRING,
+    pacing: EMPTY_ARRAY_JSON_STRING,
+    // Initialize units based on original course to preserve IDs and structure
+    // Fields will be populated or defaulted below.
+    units: originalCourse.units.map(u => ({
+      ...u, // Keep original unit ID and other potential non-Tiptap fields
+      unitName: '', timeAllotted: '', learningObjectives: EMPTY_ARRAY_JSON_STRING,
+      standards: EMPTY_ARRAY_JSON_STRING, biblicalIntegration: EMPTY_ARRAY_JSON_STRING,
+      instructionalStrategiesActivities: EMPTY_ARRAY_JSON_STRING,
+      resources: EMPTY_ARRAY_JSON_STRING, assessments: EMPTY_ARRAY_JSON_STRING,
+    }))
   };
 
-  while (currentNodeIndex < nodes.length) {
-    const node = nodes[currentNodeIndex];
-    const fieldKey = node.attrs?.fieldKey as string | undefined;
+  let currentUnitId: string | null = null;
+  let currentFieldContext: { scope: 'course' | 'unit'; fieldKeyPart: string; type: FieldType } | null = null;
+  let fieldContentAccumulator: JSONContent[] = [];
 
-    if (!fieldKey || fieldKey === 'course.unitsHeader') { // Also skip structural headers
-      currentNodeIndex++;
-      continue;
+  function saveAccumulatedContent() {
+    if (!currentFieldContext) return;
+
+    const { scope, fieldKeyPart, type } = currentFieldContext;
+    let finalContent: any;
+
+    if (type === FieldType.EditableHeader || (type === FieldType.PlainText && fieldKeyPart === 'timeAllotted')) {
+        // For EditableHeader and PlainText ('timeAllotted'), content is the direct text.
+        // Accumulator might have one node (header or paragraph)
+        // Its content array's first text node contains the value.
+        finalContent = fieldContentAccumulator[0]?.content?.map(cn => cn.text || '').join('').trim() || '';
+
+    } else { // RichText
+        finalContent = fieldContentAccumulator.length > 0
+            ? JSON.stringify({ type: 'doc', content: fieldContentAccumulator }) // Store as a 'doc'
+            : EMPTY_ARRAY_JSON_STRING; // If no content nodes, store as empty array string
     }
 
-    const parts = fieldKey.split('.');
-    const primaryType = parts[0];
-    let objectFieldName: string; // e.g. 'title', 'unitName'
-    let unitIndex = -1;
-    let targetObject: any = null;
-    let configForField: { type: FieldType; label: string } | undefined = undefined;
-
-    if (primaryType === 'course') {
-      objectFieldName = parts[1];
-      configForField = fieldConfig.course[objectFieldName];
-      if (configForField) targetObject = newCourse;
-    } else if (primaryType === 'unit') {
-      unitIndex = parseInt(parts[1], 10);
-      objectFieldName = parts[2];
-      configForField = fieldConfig.unit[objectFieldName];
-      if (!isNaN(unitIndex) && configForField) targetObject = getOrCreateUnit(unitIndex);
-    }
-
-    if (!targetObject || !configForField) {
-      console.warn("No target or config for fieldKey:", fieldKey);
-      currentNodeIndex++;
-      continue;
-    }
-
-    if (node.type === 'editableHeader' && configForField.type === FieldType.EditableHeader) {
-      targetObject[objectFieldName] = extractTextFromNodes(node.content).trim();
-      currentNodeIndex++;
-    } else if (node.type === 'unmodifiableHeader' && (configForField.type === FieldType.PlainText || configForField.type === FieldType.RichText)) {
-      currentNodeIndex++; // Move past the header
-      const contentNodesForField: JSONContent[] = [];
-      while (currentNodeIndex < nodes.length && (!nodes[currentNodeIndex].attrs?.fieldKey || (nodes[currentNodeIndex].type !== 'unmodifiableHeader' && nodes[currentNodeIndex].type !== 'editableHeader'))) {
-        contentNodesForField.push(nodes[currentNodeIndex]);
-        currentNodeIndex++;
+    if (scope === 'course') {
+        (newCourse as any)[fieldKeyPart] = finalContent;
+    } else if (scope === 'unit' && currentUnitId) {
+      const unitIndex = newCourse.units.findIndex(u => u.id === currentUnitId);
+      if (unitIndex !== -1) {
+        (newCourse.units[unitIndex] as any)[fieldKeyPart] = finalContent;
+      } else {
+        console.warn(`tiptapJsonToCourse: Unit with ID ${currentUnitId} not found in newCourse.units during save.`);
       }
-      if (configForField.type === FieldType.RichText) {
-        targetObject[objectFieldName] = (contentNodesForField.length === 0 || (contentNodesForField.length === 1 && contentNodesForField[0].type === 'paragraph' && !contentNodesForField[0].content))
-          ? EMPTY_RICH_TEXT_DATA
-          : JSON.stringify(contentNodesForField);
-      } else if (configForField.type === FieldType.PlainText) {
-        const text = extractTextFromNodes(contentNodesForField).trim();
-        targetObject[objectFieldName] = text === '' ? EMPTY_PLAIN_TEXT_DATA : text;
-      }
-    } else {
-      // console.warn(`Node type/config mismatch for fieldKey: ${fieldKey}, nodeType: ${node.type}, configType: ${configForField?.type}`);
-      currentNodeIndex++;
     }
+    fieldContentAccumulator = []; // Reset for next field
   }
+
+  json.content?.forEach(node => {
+    const nodeType = node.type; // Tiptap schema nodes have a 'name' property on their type
+    const attrs = node.attrs || {};
+    const fieldKeyAttr = attrs.fieldKey as string;
+
+    // Detect end of a field or start of a new one
+    if (nodeType === 'editableHeader') {
+      saveAccumulatedContent(); // Save previous field's content
+
+      // This node itself contains its content
+      fieldContentAccumulator = [node]; // This node is the content for this fieldKey
+
+      if (fieldKeyAttr?.startsWith('course.')) {
+        currentUnitId = null;
+        const keyPart = fieldKeyAttr.split('.')[1]; // 'title' or 'name'
+        currentFieldContext = { scope: 'course', fieldKeyPart: keyPart, type: FieldType.EditableHeader };
+      } else if (fieldKeyAttr?.startsWith('unit.')) {
+        // sectionId on the editableHeader is the unit's ID
+        currentUnitId = attrs.sectionId as string || fieldKeyAttr.split('.')[1];
+        currentFieldContext = { scope: 'unit', fieldKeyPart: 'unitName', type: FieldType.EditableHeader };
+      }
+      saveAccumulatedContent(); // Editable header content is self-contained and processed immediately
+      currentFieldContext = null; // Reset context
+
+    } else if (nodeType === 'unmodifiableHeader') {
+      saveAccumulatedContent(); // Save previous field's content
+
+      // This header signals the start of a new field's content that will follow
+      if (fieldKeyAttr?.startsWith('course.')) {
+        currentUnitId = null;
+        const keyPart = fieldKeyAttr.split('.')[1]; // e.g., 'description'
+        const config = (fieldConfig.course as any)[keyPart];
+        currentFieldContext = { scope: 'course', fieldKeyPart: keyPart, type: config?.type || FieldType.RichText };
+      } else if (fieldKeyAttr?.startsWith('unit.')) {
+        const parts = fieldKeyAttr.split('.'); // unit, unit_id, field_name_part, header
+        currentUnitId = parts[1];
+        const keyPart = parts[2]; // e.g., 'learningObjectives' or 'timeAllotted'
+        const config = (fieldConfig.unit as any)[keyPart];
+        currentFieldContext = { scope: 'unit', fieldKeyPart: keyPart, type: config?.type || FieldType.RichText };
+      }
+    } else if (currentFieldContext) {
+        // If we are in a field context (i.e., after an unmodifiableHeader, or for PlainText under its header)
+        if (currentFieldContext.type === FieldType.PlainText && currentFieldContext.fieldKeyPart === 'timeAllotted') {
+            // For timeAllotted, the content is the paragraph immediately following its unmodifiableHeader
+            // We added a fieldKey to this paragraph: `unit.${unit.id}.timeAllotted.content`
+            if (attrs.fieldKey === `unit.${currentUnitId}.timeAllotted.content`) {
+                 fieldContentAccumulator.push(node); // Accumulate this paragraph node
+                 // Since it's PlainText and directly follows, we can save it immediately
+                 saveAccumulatedContent();
+                 currentFieldContext = null; // This specific PlainText field is done
+            }
+        } else if (currentFieldContext.type === FieldType.RichText) {
+             // Accumulate general RichText content nodes
+            fieldContentAccumulator.push(node);
+        }
+    }
+  });
+
+  saveAccumulatedContent(); // Save any remaining content for the last field
+
+  // Post-processing: Ensure all units from originalCourse are present and fields are defaulted
+  newCourse.units = originalCourse.units.map(originalUnit => {
+    let processedUnit = newCourse.units.find(nu => nu.id === originalUnit.id);
+
+    if (!processedUnit) {
+      // This case should ideally not happen if we base newCourse.units on originalCourse.units
+      // But as a fallback, create an empty shell.
+      console.warn(`Unit ${originalUnit.id} was in original but not found after processing. Re-adding as empty.`);
+      processedUnit = { ...originalUnit }; // Keep ID
+      (Object.keys(fieldConfig.unit) as Array<keyof Omit<Unit, 'id'>>).forEach(key => {
+        const conf = fieldConfig.unit[key];
+        if (conf?.type === FieldType.RichText) (processedUnit as any)[key] = EMPTY_ARRAY_JSON_STRING;
+        else (processedUnit as any)[key] = '';
+      });
+      return processedUnit;
+    }
+
+    // Ensure all fields in the processed unit are defaulted if they ended up empty
+    (Object.keys(fieldConfig.unit) as Array<keyof Omit<Unit, 'id'>>).forEach(key => {
+      const conf = fieldConfig.unit[key];
+      if (!(processedUnit as any)[key] || ((processedUnit as any)[key] === EMPTY_ARRAY_JSON_STRING && conf?.type !== FieldType.RichText)) {
+        if (conf?.type === FieldType.RichText) {
+          (processedUnit as any)[key] = EMPTY_ARRAY_JSON_STRING;
+        } else { // PlainText or EditableHeader
+          (processedUnit as any)[key] = '';
+        }
+      }
+    });
+    return processedUnit;
+  });
+
+  // Ensure all course-level fields are defaulted if empty
+  (Object.keys(fieldConfig.course) as Array<keyof Omit<Course, 'id' | 'units'>>).forEach(key => {
+    const conf = fieldConfig.course[key];
+    if (!(newCourse as any)[key] || ((newCourse as any)[key] === EMPTY_ARRAY_JSON_STRING && conf?.type !== FieldType.RichText)) {
+        if (conf?.type === FieldType.RichText) {
+            (newCourse as any)[key] = EMPTY_ARRAY_JSON_STRING;
+        } else { // PlainText or EditableHeader
+            (newCourse as any)[key] = '';
+        }
+    }
+  });
+
   return newCourse;
 }

@@ -1,20 +1,11 @@
 // src/utils/completionUtils.ts
-import { EMPTY_ARRAY_JSON_STRING } from './constants';
+import { EMPTY_ARRAY_JSON_STRING } from './constants'; // Assuming this is defined elsewhere or define it here
 import { type JSONContent } from '@tiptap/core';
+import type { Course, Unit } from '../types'; // Make sure Unit is exported from types
 
 /**
  * Checks if a string representing Tiptap JSON content is effectively empty.
- * 
- * "Empty" means:
- * - The string is equal to EMPTY_ARRAY_JSON_STRING ('[]').
- * - Or, if parsed as Tiptap JSON (e.g., { type: 'doc', content: [...] }):
- *   - doc.content is undefined or an empty array.
- *   - doc.content has one element, which is a paragraph (type: 'paragraph'), 
- *     and that paragraph itself has no `content` or its `content` array is empty.
- *   - doc.content has one element, a paragraph, with a single empty text node.
- * 
- * @param jsonString The stringified Tiptap JSON content.
- * @returns True if the content is considered empty, false otherwise.
+ * (Keep your existing isRichTextEmpty function as is)
  */
 export function isRichTextEmpty(jsonString: string | undefined | null): boolean {
   if (jsonString === null || jsonString === undefined) {
@@ -36,10 +27,8 @@ export function isRichTextEmpty(jsonString: string | undefined | null): boolean 
       const node = doc.content[0];
       if (node.type === 'paragraph') {
         if (!node.content || node.content.length === 0) {
-          return true; // e.g., { type: 'doc', content: [{ type: 'paragraph' }] }
+          return true;
         }
-        // Check for paragraph with a single empty text node
-        // e.g., { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '' }] }] }
         if (
           node.content.length === 1 &&
           node.content[0].type === 'text' &&
@@ -51,11 +40,71 @@ export function isRichTextEmpty(jsonString: string | undefined | null): boolean 
     }
     return false;
   } catch (error) {
-    // If parsing fails, it's likely not valid, non-empty Tiptap content.
-    // Or it could be a plain string. If it's not '[]', and not parseable as a valid empty doc,
-    // treat it as non-empty or log error. For this function's purpose, non-empty is safer.
-    // However, the prompt stated: "If parsing fails, consider it empty or log an error and treat as empty."
     console.warn("Failed to parse JSON string in isRichTextEmpty, treating as empty:", jsonString, error);
-    return true; 
+    return true;
   }
+}
+
+// Define which fields contribute to completion
+export const COURSE_LEVEL_FIELDS_FOR_COMPLETION: (keyof Pick<Course, 'description' | 'biblicalBasis' | 'materials' | 'pacing'>)[] = [
+  'description',
+  'biblicalBasis',
+  'materials',
+  'pacing',
+];
+
+export const UNIT_LEVEL_FIELDS_FOR_COMPLETION: (keyof Omit<Unit, 'id' | 'unitName' | 'timeAllotted'>)[] = [
+  'learningObjectives',
+  'standards',
+  'biblicalIntegration',
+  'instructionalStrategiesActivities',
+  'resources',
+  'assessments',
+];
+
+export function calculateSectionCompletion(
+  data: Course | Unit,
+  sectionType: 'overall' | 'unit'
+): { completed: number; total: number; percentage: number } {
+  let totalFields = 0;
+  let completedFields = 0;
+
+  if (sectionType === 'overall') {
+    const courseData = data as Course;
+    // Plain text fields for course
+    totalFields++; // title
+    if (courseData.title && courseData.title.trim() !== '') completedFields++;
+    totalFields++; // name
+    if (courseData.name && courseData.name.trim() !== '') completedFields++;
+
+    COURSE_LEVEL_FIELDS_FOR_COMPLETION.forEach((field) => {
+      totalFields++;
+      if (!isRichTextEmpty(courseData[field])) {
+        completedFields++;
+      }
+    });
+  } else if (sectionType === 'unit') {
+    const unitData = data as Unit;
+    // Plain text field for unit
+    totalFields++; // unitName
+    if (unitData.unitName && unitData.unitName.trim() !== '') completedFields++;
+    // timeAllotted is optional and might not be part of completion metric, or handle as plain text
+    // totalFields++; // timeAllotted
+    // if (unitData.timeAllotted && unitData.timeAllotted.trim() !== '') completedFields++;
+
+
+    UNIT_LEVEL_FIELDS_FOR_COMPLETION.forEach((field) => {
+      totalFields++;
+      const fieldValue = unitData[field] as string | undefined | null;
+      if (!isRichTextEmpty(fieldValue)) {
+        completedFields++;
+      }
+    });
+  }
+
+  return {
+    completed: completedFields,
+    total: totalFields,
+    percentage: totalFields > 0 ? (completedFields / totalFields) * 100 : 0,
+  };
 }

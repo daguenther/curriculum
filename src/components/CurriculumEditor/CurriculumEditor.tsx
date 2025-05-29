@@ -1,20 +1,18 @@
 // src/components/CurriculumEditor/CurriculumEditor.tsx
 import React, { useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
 import { useEditor, EditorContent, type JSONContent } from '@tiptap/react';
-import { editorExtensions } from './tiptapExtensions';
+import { editorExtensions } from './tiptapExtensions'; // Ensure Placeholder extension is configured here
 import { type Course } from '../../types';
 import { courseToTiptapJson } from './courseSerializer';
 import { RichTextEditor } from '@mantine/tiptap';
 import '@mantine/tiptap/styles.css';
-import { Button, Paper, Group, Stack, Title, Box, Tooltip, type MantineTheme } from '@mantine/core';
-import { IconDeviceFloppy, IconMarkdown, IconCheck } from '@tabler/icons-react'; // IconPlus removed as not used here
+import { Button, Stack, Tooltip, type MantineTheme } from '@mantine/core';
+import { IconDeviceFloppy, IconMarkdown, IconCheck } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { tiptapJsonToMarkdown } from '../../utils/tiptapToMarkdown';
 
-// Define the interface for the methods exposed by the editor via ref
 export interface CurriculumEditorRef {
   scrollToSection: (sectionId: string) => void;
-  // Add other methods you might want to call from the parent if necessary
 }
 
 interface CurriculumEditorProps {
@@ -27,8 +25,8 @@ const CurriculumEditor = forwardRef<CurriculumEditorRef, CurriculumEditorProps>(
   ({ initialCourseData, onSave, courseId }, ref) => {
     const editor = useEditor({
       immediatelyRender: false,
-      extensions: editorExtensions,
-      content: '',
+      extensions: editorExtensions, // Ensure Placeholder extension is configured here
+      content: '', // Initial content set by useEffect
       editable: true,
     });
 
@@ -39,33 +37,58 @@ const CurriculumEditor = forwardRef<CurriculumEditorRef, CurriculumEditorProps>(
 
     useEffect(() => {
       if (initialCourseData && editor && !editor.isDestroyed) {
+        // CRITICAL: The 'Invalid content... Empty text nodes' error
+        // originates from courseToTiptapJson.
+        // It must not produce nodes like { "type": "text", "text": "" }.
+        // It needs to correctly handle EMPTY_ARRAY_JSON_STRING and empty strings
+        // to produce valid Tiptap JSON (e.g., an empty paragraph { "type": "paragraph" }).
         const tiptapJson = courseToTiptapJson(initialCourseData);
-        editor.commands.setContent(tiptapJson, false);
+
+        // For debugging the Tiptap content error:
+        // console.log('Initial Course Data:', JSON.stringify(initialCourseData, null, 2));
+        // console.log('Generated Tiptap JSON for setContent:', JSON.stringify(tiptapJson, null, 2));
+
+        try {
+          editor.commands.setContent(tiptapJson, false);
+        } catch (error) {
+            console.error("Error setting Tiptap content:", error, "Problematic JSON:", tiptapJson);
+            // Fallback to a safe empty state if content is truly broken
+            editor.commands.setContent({ type: 'doc', content: [{ type: 'paragraph' }] }, false);
+            notifications.show({
+                title: 'Content Load Error',
+                message: 'There was an issue loading parts of the course content. Some content may appear empty.',
+                color: 'orange',
+            });
+        }
       }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [initialCourseData, editor]);
+    }, [initialCourseData, editor]); // editor dependency is important for re-initialization
 
-    // Expose specific methods to the parent component via ref
     useImperativeHandle(ref, () => ({
       scrollToSection: (sectionId: string) => {
-        if (!editor || editor.isDestroyed) return;
-        // This is a basic implementation. It assumes your Tiptap content renders
-        // elements with `id` attributes matching `sectionId`.
-        // You might need a more robust way to find and scroll to Tiptap nodes.
+        if (!editor || editor.isDestroyed || !editor.view || !editor.view.dom) {
+          console.warn("[CurriculumEditor] scrollToSection called but editor or its view is not ready.");
+          return;
+        }
         try {
-            const contentArea = editor.view.dom.closest('.mantine-RichTextEditor-content') || editor.view.dom.parentElement;
-            if (contentArea) {
-                const targetElement = contentArea.querySelector(`#${CSS.escape(sectionId)}`);
+            const editorElement = editor.view.dom;
+            const scrollableView = editorElement.closest('.mantine-RichTextEditor-content') || editorElement.parentElement || document.documentElement;
+
+            if (scrollableView) {
+                const targetElement = scrollableView.querySelector(`#${CSS.escape(sectionId)}`);
                 if (targetElement) {
                     targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 } else {
-                    console.warn(`[CurriculumEditor] scrollToSection: Element with ID "${sectionId}" not found.`);
-                    // Fallback: scroll the editor's parent scroll container to the top
-                    if (contentArea.scrollTop !== undefined) contentArea.scrollTop = 0;
+                    console.warn(`[CurriculumEditor] scrollToSection: Element with ID "${sectionId}" not found in editor content.`);
+                    if (scrollableView && typeof (scrollableView as HTMLElement).scrollTop === 'number') {
+                      (scrollableView as HTMLElement).scrollTop = 0;
+                    }
                 }
+            } else {
+                 console.warn("[CurriculumEditor] scrollToSection: Could not find scrollable view container.");
             }
         } catch (e) {
-            console.error("Error scrolling to section:", e);
+            console.error("[CurriculumEditor] Error scrolling to section:", e);
         }
       },
     }));
@@ -87,26 +110,13 @@ const CurriculumEditor = forwardRef<CurriculumEditorRef, CurriculumEditorProps>(
       }
     };
 
-    const internalHandleAddUnit = () => {
-      // This command needs to be implemented as a Tiptap extension if it's custom
-      if (editor && (editor.commands as any).addUnit) { // Cast to any if addUnit is a custom command
-        editor.chain().focus().addUnit().run();
-      } else {
-        console.error("addUnit command not available on editor.");
-        notifications.show({ title: 'Error', message: 'Cannot add unit. Command not available.', color: 'red' });
-      }
-    };
-
-    // FIX: Define internalHandleSuggestChanges
     const internalHandleSuggestChanges = async () => {
       if (!editor) return;
       const editorJson = editor.getJSON();
       try {
-        // Use the onSaveRef to call the onSave prop passed from App.tsx
         await onSaveRef.current(editorJson);
-        // Notification for success can be shown here or in App.tsx's onSave handler
         notifications.show({
-          title: 'Changes Submitted!', // Or "Suggested" to match button
+          title: 'Changes Submitted!',
           message: 'Your updates have been sent for review.',
           color: 'green',
           icon: <IconCheck size={18} />,
@@ -122,6 +132,8 @@ const CurriculumEditor = forwardRef<CurriculumEditorRef, CurriculumEditorProps>(
     };
 
     if (!editor) {
+      // This should ideally not be shown long if `immediatelyRender: false`
+      // and useEffect populates content.
       return <div>Loading editor...</div>;
     }
 
@@ -142,28 +154,27 @@ const CurriculumEditor = forwardRef<CurriculumEditorRef, CurriculumEditorProps>(
               },
             },
             content: {
-              minHeight: `calc(100vh - 320px)`,
+              minHeight: `calc(100vh - 380px)`,
               '& .ProseMirror': {
                 padding: theme.spacing.md,
-                '& [data-unmodifiable-header="true"]': {},
-                '& [data-editable-header="true"]': {},
-                '& .is-editor-empty:first-child::before': {
-                  content: 'attr(data-placeholder)',
-                  float: 'left',
-                  color: theme.colors.gray[6],
-                  pointerEvents: 'none',
-                  height: 0,
-                  fontStyle: 'italic',
+                // Ensure these data attributes are actually being set by your custom nodes/logic
+                '& [data-unmodifiable-header="true"]': {
+                  /* styles for unmodifiable headers */
+                  // Example: backgroundColor: theme.colors.gray[1], cursor: 'not-allowed'
                 },
-              },
-              '& .ProseMirror.is-editor-empty:first-child::before': {
-                content: 'attr(data-placeholder)',
-                position: 'absolute',
-                left: theme.spacing.md,
-                top: theme.spacing.md,
-                color: theme.colors.gray[6],
-                pointerEvents: 'none',
-                fontStyle: 'italic',
+                '& [data-editable-header="true"]': {
+                  /* styles for editable headers */
+                },
+                // Rely on Tiptap's Placeholder extension for placeholder styling.
+                // If you need to override its styles, target the classes it adds.
+                // Example:
+                // '& .is-empty::before': {
+                //   content: 'attr(data-placeholder)',
+                //   float: 'left',
+                //   color: theme.colors.gray[5],
+                //   pointerEvents: 'none',
+                //   height: 0,
+                // },
               },
             },
           })}
@@ -186,9 +197,9 @@ const CurriculumEditor = forwardRef<CurriculumEditorRef, CurriculumEditorProps>(
             <RichTextEditor.ControlsGroup style={{ marginLeft: 'auto' }}>
               <Tooltip label="Copy content as Markdown" withArrow>
                 <Button
-                  variant="outline"
+                  variant="default" // "outline" is also good
                   onClick={internalHandleCopyAsMarkdown}
-                  disabled={!editor}
+                  disabled={!editor || editor.isEmpty}
                   size="xs"
                   leftSection={<IconMarkdown size={16} />}
                 >
@@ -197,8 +208,8 @@ const CurriculumEditor = forwardRef<CurriculumEditorRef, CurriculumEditorProps>(
               </Tooltip>
               <Tooltip label="Submit your suggested changes" withArrow>
                 <Button
-                  onClick={internalHandleSuggestChanges} // This will now call the defined function
-                  disabled={!editor}
+                  onClick={internalHandleSuggestChanges}
+                  disabled={!editor || editor.isEmpty}
                   size="xs"
                   leftSection={<IconDeviceFloppy size={16} />}
                 >
@@ -214,6 +225,6 @@ const CurriculumEditor = forwardRef<CurriculumEditorRef, CurriculumEditorProps>(
   }
 );
 
-CurriculumEditor.displayName = 'CurriculumEditor'; // For better debugging with React DevTools
+CurriculumEditor.displayName = 'CurriculumEditor';
 
 export default CurriculumEditor;

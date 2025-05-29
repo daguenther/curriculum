@@ -1,28 +1,26 @@
 // src/types/index.ts
 
 export interface Unit {
-  id?: string; // Optional: if units could ever be standalone or need unique keys for rendering
-  unitName: string; // Typically plain text, could be an input field outside the main editor
-  timeAllotted: string; // Typically plain text
-
-  // These fields will store stringified Tiptap JSON
-  learningObjectives: string;
-  standards: string;
-  biblicalIntegration: string;
-  instructionalStrategiesActivities: string;
-  resources: string;
-  assessments: string;
+  id: string; // Essential for tabs and keys
+  unitName: string;
+  timeAllotted?: string;
+  learningObjectives: string; // JSONContent string
+  standards: string; // JSONContent string
+  biblicalIntegration: string; // JSONContent string
+  instructionalStrategiesActivities: string; // JSONContent string
+  resources: string; // JSONContent string
+  assessments: string; // JSONContent string
+  // any other unit-specific fields
 }
 
 export interface Course {
-  id: string; // Document ID from Firebase
-  title: string; // Typically plain text
-  name: string;  // Typically plain text
-
-  // These fields will store stringified Tiptap JSON
-  description: string;
-  biblicalBasis: string;
-  materials: string;
-  pacing: string;
+  id: string;
+  title: string;
+  name: string; // e.g. "BIBLE101"
+  description: string; // JSONContent string
+  biblicalBasis: string; // JSONContent string
+  materials: string; // JSONContent string
+  pacing: string; // JSONContent string
   units: Unit[];
+  // any other course-level fields
 }
