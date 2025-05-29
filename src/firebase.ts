@@ -71,6 +71,8 @@ export interface CourseMetadata {
   id: string;
   title: string;
   name: string;
+  department: string;
+  progress: number;
 }
 
 export const fetchAllCourseMetadata = async (): Promise<CourseMetadata[]> => {
@@ -81,7 +83,15 @@ export const fetchAllCourseMetadata = async (): Promise<CourseMetadata[]> => {
     const courses: CourseMetadata[] = [];
     querySnapshot.forEach((doc) => {
       const data = doc.data();
-      courses.push({ id: doc.id, title: data.title || 'Untitled Course', name: data.name || '' });
+      const department = typeof data.department === 'string' ? data.department : 'Uncategorized';
+      const progress = typeof data.progress === 'number' ? data.progress : 0;
+      courses.push({
+        id: doc.id,
+        title: data.title || 'Untitled Course',
+        name: data.name || '',
+        department,
+        progress,
+      });
     });
     return courses;
   } catch (error) {

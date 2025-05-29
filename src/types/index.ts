@@ -22,5 +22,7 @@ export interface Course {
   materials: string; // JSONContent string
   pacing: string; // JSONContent string
   units: Unit[];
+  department: string;
+  progress: number;
   // any other course-level fields
 }
