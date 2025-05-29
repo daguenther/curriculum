@@ -21,13 +21,16 @@ export interface CurriculumEditorRef {
   triggerAddUnit: () => void;
   triggerCopyMarkdown: () => void;
   triggerSuggestChanges: () => void;
+  scrollToSection: (sectionId: string) => void; // Added for scrolling
   // getEditorContent: () => JSONContent | null; // Alternative approach, not used for now
 }
 
 const CurriculumEditor = forwardRef<CurriculumEditorRef, CurriculumEditorProps>(
   ({ initialCourseData, onSave, courseId }, ref) => {
     const editor = useEditor({
-      immediatelyRender: false,
+      // immediatelyRender: false, // Default is true. Let's test with true or removing it.
+                                // If issues arise with DOM not being ready, can revert or use other strategies.
+                                // For now, relying on editorKey and activeTab in App.tsx useEffect.
       extensions: editorExtensions,
     content: '',
     editable: true,
@@ -89,6 +92,33 @@ const CurriculumEditor = forwardRef<CurriculumEditorRef, CurriculumEditorProps>(
     },
     triggerSuggestChanges: () => {
       internalHandleSuggestChanges();
+    },
+    scrollToSection: (sectionId: string) => {
+      if (!editor || editor.isDestroyed) {
+        console.warn(`scrollToSection: Editor not available or destroyed (sectionId: ${sectionId}).`);
+        return;
+      }
+      // Attempt to find the element.
+      // editor.view.dom is the root ProseMirror editable element.
+      const element = editor.view.dom.querySelector(`[data-section-id="${sectionId}"]`);
+      
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else {
+        // Fallback or warning if element not found. This might happen if content rendering is delayed.
+        console.warn(`scrollToSection: Element with data-section-id="${sectionId}" not found. Attempting scroll on next frame.`);
+        // As a fallback, try after a very short delay, in case the DOM wasn't fully ready.
+        // This is a common pattern but should be used cautiously.
+        // The editorKey change in App.tsx should ideally handle most race conditions.
+        requestAnimationFrame(() => {
+          const elementRetry = editor.view.dom.querySelector(`[data-section-id="${sectionId}"]`);
+          if (elementRetry) {
+            elementRetry.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          } else {
+            console.error(`scrollToSection: Element with data-section-id="${sectionId}" still not found after retry.`);
+          }
+        });
+      }
     },
     // getEditorContent: () => { // Alternative approach
     //   return editor ? editor.getJSON() : null;
@@ -190,6 +220,31 @@ const CurriculumEditor = forwardRef<CurriculumEditorRef, CurriculumEditorProps>(
           <RichTextEditor.ControlsGroup>
             <RichTextEditor.Link />
             <RichTextEditor.Unlink />
+          </RichTextEditor.ControlsGroup>
+
+          {/* Custom Controls Group for Copy Markdown and Suggest Changes - Aligned to the right */}
+          <RichTextEditor.ControlsGroup style={{ marginLeft: 'auto' }}>
+            <Tooltip label="Copy content as Markdown" withArrow>
+              <Button
+                variant="outline"
+                onClick={internalHandleCopyAsMarkdown}
+                disabled={!editor}
+                size="xs" // Match typical toolbar button sizes
+                leftSection={<IconMarkdown size={16} />}
+              >
+                Copy Markdown
+              </Button>
+            </Tooltip>
+            <Tooltip label="Submit your suggested changes" withArrow>
+              <Button
+                onClick={internalHandleSuggestChanges}
+                disabled={!editor}
+                size="xs" // Match typical toolbar button sizes
+                leftSection={<IconDeviceFloppy size={16} />}
+              >
+                Suggest Changes
+              </Button>
+            </Tooltip>
           </RichTextEditor.ControlsGroup>
         </RichTextEditor.Toolbar>
         <RichTextEditor.Content />

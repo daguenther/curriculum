@@ -68,6 +68,7 @@ export const EditableHeaderNode = Node.create({
       level: { default: 1, parseHTML: element => parseInt(element.getAttribute('data-level') || '1') },
       label: { default: '', parseHTML: element => element.querySelector('[data-header-label]')?.textContent || '' },
       fieldKey: { default: '', parseHTML: element => element.getAttribute('data-field-key') },
+      sectionId: { default: null, parseHTML: element => element.getAttribute('data-section-id') }, // Added sectionId
     };
   },
   parseHTML() {
@@ -81,25 +82,32 @@ export const EditableHeaderNode = Node.create({
             level: parseInt(element.getAttribute('data-level') || '1', 10),
             label: element.querySelector('[data-header-label]')?.textContent || '',
             fieldKey: element.getAttribute('data-field-key') || '',
+            sectionId: element.getAttribute('data-section-id'), // Parse sectionId
           };
         },
       },
     ];
   },
   renderHTML({ HTMLAttributes }) {
-    const { level, label, fieldKey, ...rest } = HTMLAttributes;
+    const { level, label, fieldKey, sectionId, ...rest } = HTMLAttributes; // Destructure sectionId
     let TagName: 'h1' | 'h2' | 'h3' | 'h4' = 'h3';
     if (level === 1) TagName = 'h1';
     if (level === 2) TagName = 'h2';
 
+    const attributesToMerge: Record<string, any> = {
+      'data-editable-header': 'true',
+      'data-level': String(level),
+      'data-field-key': String(fieldKey),
+      style: `font-weight: bold; margin-top: 1em; margin-bottom: 0.2em; display: flex; align-items: baseline;`,
+    };
+
+    if (sectionId) {
+      attributesToMerge['data-section-id'] = sectionId; // Add data-section-id if present
+    }
+
     return [
       TagName, // Use semantic heading tag for the entire block
-      mergeAttributes(rest, {
-        'data-editable-header': 'true',
-        'data-level': String(level),
-        'data-field-key': String(fieldKey),
-        style: `font-weight: bold; margin-top: 1em; margin-bottom: 0.2em; display: flex; align-items: baseline;`,
-      }),
+      mergeAttributes(rest, attributesToMerge),
       [
         'span', // Static label part
         {

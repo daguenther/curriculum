@@ -3,15 +3,18 @@ import { type JSONContent } from '@tiptap/core';
 import type { Course, Unit } from '../../types';
 import { EMPTY_RICH_TEXT_DATA, EMPTY_PLAIN_TEXT_DATA, EMPTY_PARAGRAPH_NODE_ARRAY } from '../../utils/constants';
 
+export const COURSE_HEADER_SECTION_ID = 'course-header-section'; // For scrolling
+
 export enum FieldType {
   PlainText = 'PlainText',
   RichText = 'RichText',
   EditableHeader = 'EditableHeader'
 }
 
-export const fieldConfig: Record<string, Record<string, { type: FieldType; label: string }>> = {
+// Added isScrollTarget to relevant field configs
+export const fieldConfig: Record<string, Record<string, { type: FieldType; label: string; isScrollTarget?: boolean }>> = {
   course: {
-    title: { type: FieldType.EditableHeader, label: "Course Title: " },
+    title: { type: FieldType.EditableHeader, label: "Course Title: ", isScrollTarget: true },
     name: { type: FieldType.EditableHeader, label: "Course Name/Code: " },
     description: { type: FieldType.RichText, label: "Description" },
     biblicalBasis: { type: FieldType.RichText, label: "Biblical Basis" },
@@ -19,7 +22,7 @@ export const fieldConfig: Record<string, Record<string, { type: FieldType; label
     pacing: { type: FieldType.RichText, label: "Pacing Guide" },
   },
   unit: {
-    unitName: { type: FieldType.EditableHeader, label: "Unit Name: " },
+    unitName: { type: FieldType.EditableHeader, label: "Unit Name: ", isScrollTarget: true },
     timeAllotted: { type: FieldType.PlainText, label: "Time Allotted" },
     learningObjectives: { type: FieldType.RichText, label: "Learning Objectives" },
     standards: { type: FieldType.RichText, label: "Standards" },
@@ -34,9 +37,20 @@ function createUnmodifiableHeaderNode(label: string, level: number, fieldKey: st
   return { type: 'unmodifiableHeader', attrs: { label, level, fieldKey } };
 }
 
-function createEditableHeaderNode(staticLabel: string, initialValue: string | null | undefined, level: number, fieldKey: string): JSONContent {
+// Modified to include sectionId
+function createEditableHeaderNode(
+  staticLabel: string,
+  initialValue: string | null | undefined,
+  level: number,
+  fieldKey: string,
+  sectionId?: string // Optional sectionId parameter
+): JSONContent {
   const contentNodes: JSONContent[] = (initialValue && initialValue.trim() !== '') ? [{ type: 'text', text: initialValue }] : [];
-  return { type: 'editableHeader', attrs: { label: staticLabel, level, fieldKey }, content: contentNodes };
+  const attrs: Record<string, any> = { label: staticLabel, level, fieldKey };
+  if (sectionId) {
+    attrs.sectionId = sectionId; // Add sectionId to attributes if provided
+  }
+  return { type: 'editableHeader', attrs, content: contentNodes };
 }
 
 function createContentNodesForField(contentValue: string | null | undefined, fieldType: FieldType.PlainText | FieldType.RichText, fieldKeyForDebug: string): JSONContent[] {
@@ -64,9 +78,26 @@ function createContentNodesForField(contentValue: string | null | undefined, fie
 
 export function courseToTiptapJson(course: Course): JSONContent {
   const content: JSONContent[] = [];
-  const addSection = (fullFieldKey: string, value: string | null | undefined, config: { type: FieldType; label: string }, level: number) => {
+  const addSection = (
+    fullFieldKey: string,
+    value: string | null | undefined,
+    config: { type: FieldType; label: string; isScrollTarget?: boolean }, // Updated config type
+    level: number,
+    unitIdForScrollTarget?: string // To pass unit.id for unitName scroll target
+  ) => {
     if (config.type === FieldType.EditableHeader) {
-      content.push(createEditableHeaderNode(config.label, value, level, fullFieldKey));
+      let sectionId: string | undefined = undefined;
+      if (config.isScrollTarget) {
+        if (fullFieldKey === 'course.title') {
+          sectionId = COURSE_HEADER_SECTION_ID;
+        } else if (unitIdForScrollTarget && fieldConfig.unit[fullFieldKey.split('.')[2]]?.isScrollTarget) {
+           // Ensure it's the unitName field specifically that gets unit.id as sectionId
+           if (fullFieldKey.endsWith('.unitName')) {
+             sectionId = unitIdForScrollTarget;
+           }
+        }
+      }
+      content.push(createEditableHeaderNode(config.label, value, level, fullFieldKey, sectionId));
     } else {
       content.push(createUnmodifiableHeaderNode(config.label, level, fullFieldKey));
       content.push(...createContentNodesForField(value, config.type as FieldType.PlainText | FieldType.RichText, `${fullFieldKey}.content`));
@@ -81,14 +112,16 @@ export function courseToTiptapJson(course: Course): JSONContent {
   addSection('course.pacing', course.pacing, fieldConfig.course.pacing, 2);
 
   if (course.units && course.units.length > 0) {
-    content.push(createUnmodifiableHeaderNode('Units Overview', 1, `course.unitsHeader`));
+    content.push(createUnmodifiableHeaderNode('Units Overview', 1, `course.unitsHeader`)); // This header is not a scroll target
     course.units.forEach((unit, unitIndex) => {
       const unitBaseKey = `unit.${unitIndex}`;
       Object.keys(fieldConfig.unit).forEach(fieldNameKey => {
         const config = fieldConfig.unit[fieldNameKey];
-        const unitFieldValue = unit[fieldNameKey as keyof Unit] as string | null | undefined; // Type assertion
+        const unitFieldValue = unit[fieldNameKey as keyof Unit] as string | null | undefined;
         const fieldLevel = fieldNameKey === 'unitName' ? 2 : 3;
-        addSection(`${unitBaseKey}.${fieldNameKey}`, unitFieldValue, config, fieldLevel);
+        // Pass unit.id if the field is a scroll target (specifically for unitName)
+        const unitIdForScroll = (config.isScrollTarget && unit.id && fieldNameKey === 'unitName') ? unit.id : undefined;
+        addSection(`${unitBaseKey}.${fieldNameKey}`, unitFieldValue, config, fieldLevel, unitIdForScroll);
       });
     });
   }

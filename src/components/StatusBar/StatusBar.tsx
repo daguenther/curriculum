@@ -1,6 +1,6 @@
 // src/components/StatusBar/StatusBar.tsx
 import React from 'react';
-import { Paper, Text, Progress, useMantineTheme } from '@mantine/core';
+import { Paper, Text, RingProgress, Box, Group, useMantineTheme, Flex } from '@mantine/core';
 import type { Course } from '../../types';
 import { isRichTextEmpty } from '../../utils/completionUtils';
 
@@ -12,17 +12,20 @@ const StatusBar: React.FC<StatusBarProps> = ({ currentCourse }) => {
   const theme = useMantineTheme();
 
   if (!currentCourse) {
-    return null; // Or a placeholder like <Text c="dimmed">No course loaded.</Text>
+    return null; 
   }
 
-  const courseLevelFields: (keyof Pick<Course, 'description' | 'biblicalBasis' | 'materials' | 'pacing'>)[] = [
+  // Define fields for overall course progress
+  const courseLevelRichTextFields: (keyof Pick<Course, 'description' | 'biblicalBasis' | 'materials' | 'pacing'>)[] = [
     'description',
     'biblicalBasis',
     'materials',
     'pacing',
   ];
+  const courseLevelPlainTextFields: (keyof Pick<Course, 'title' | 'name'>)[] = ['title', 'name'];
 
-  const unitLevelFields: (keyof Course['units'][0])[] = [
+  // Define fields for unit-specific progress
+  const unitLevelRichTextFields: (keyof Pick<Course['units'][0], 'learningObjectives' | 'standards' | 'biblicalIntegration' | 'instructionalStrategiesActivities' | 'resources' | 'assessments'>)[] = [
     'learningObjectives',
     'standards',
     'biblicalIntegration',
@@ -30,78 +33,107 @@ const StatusBar: React.FC<StatusBarProps> = ({ currentCourse }) => {
     'resources',
     'assessments',
   ];
+  const unitLevelPlainTextFields: (keyof Pick<Course['units'][0], 'unitName'>)[] = ['unitName'];
 
-  let totalSections = 0;
-  let completedSections = 0;
 
-  // Check course-level fields
-  courseLevelFields.forEach((field) => {
-    totalSections++;
+  const getProgressColor = (value: number): string => {
+    if (value === 0) return theme.colors.gray[4];
+    if (value === 100) return theme.colors.green[6];
+    return theme.colors.yellow[6];
+  };
+
+  // Calculate overall course progress
+  let overallCompleted = 0;
+  const overallTotal = courseLevelRichTextFields.length + courseLevelPlainTextFields.length;
+
+  courseLevelRichTextFields.forEach((field) => {
     if (!isRichTextEmpty(currentCourse[field])) {
-      completedSections++;
+      overallCompleted++;
     }
   });
+  courseLevelPlainTextFields.forEach((field) => {
+    const value = currentCourse[field];
+    if (value && typeof value === 'string' && value.trim() !== '') {
+      overallCompleted++;
+    }
+  });
+  const overallProgressValue = overallTotal > 0 ? (overallCompleted / overallTotal) * 100 : 0;
 
-  // Check unit-level fields for each unit
-  if (currentCourse.units && currentCourse.units.length > 0) {
-    currentCourse.units.forEach((unit) => {
-      unitLevelFields.forEach((field) => {
-        totalSections++;
-        // Ensure unit[field] is passed as string | undefined | null
-        const fieldValue = unit[field] as string | undefined | null;
-        if (!isRichTextEmpty(fieldValue)) {
-          completedSections++;
-        }
-      });
-      // Also consider unitName as a section (it's plain text, but important)
-      // For plain text fields, empty means an empty string or null/undefined.
-      // isRichTextEmpty isn't directly for plain text, so we'll do a direct check.
-      totalSections++;
-      if (unit.unitName && unit.unitName.trim() !== '') {
-          completedSections++;
+
+  // Calculate unit-specific progress
+  const unitProgressList = currentCourse.units?.map(unit => {
+    let unitCompleted = 0;
+    const unitTotal = unitLevelRichTextFields.length + unitLevelPlainTextFields.length;
+
+    unitLevelRichTextFields.forEach(field => {
+      const fieldValue = unit[field] as string | undefined | null;
+      if (!isRichTextEmpty(fieldValue)) {
+        unitCompleted++;
       }
     });
-  }
-  
-  // Also consider course title and name as sections (plain text)
-  totalSections++;
-  if (currentCourse.title && currentCourse.title.trim() !== '') {
-    completedSections++;
-  }
-  totalSections++;
-  if (currentCourse.name && currentCourse.name.trim() !== '') {
-    completedSections++;
-  }
-
-
-  let backgroundColor = theme.colors.gray[1]; // Neutral for totalSections === 0
-  let textColor = theme.black;
-  const progressValue = totalSections > 0 ? (completedSections / totalSections) * 100 : 0;
-  let progressColor = theme.colors.yellow[6];
-
-  if (totalSections > 0) {
-    if (completedSections === totalSections) {
-      backgroundColor = theme.colors.green[1];
-      textColor = theme.colors.green[8];
-      progressColor = theme.colors.green[6];
-    } else {
-      backgroundColor = theme.colors.yellow[1];
-      textColor = theme.colors.yellow[8];
-    }
-  }
-
-  const sectionsRemaining = totalSections - completedSections;
-  const statusText = sectionsRemaining > 0 
-    ? `${sectionsRemaining} section(s) need attention.`
-    : `All ${totalSections} sections look complete!`;
+    unitLevelPlainTextFields.forEach(field => {
+      const value = unit[field];
+      if (value && typeof value === 'string' && value.trim() !== '') {
+        unitCompleted++;
+      }
+    });
+    const unitProgressValue = unitTotal > 0 ? (unitCompleted / unitTotal) * 100 : 0;
+    return {
+      name: unit.unitName || 'Unnamed Unit',
+      value: unitProgressValue,
+      completed: unitCompleted,
+      total: unitTotal,
+    };
+  });
 
   return (
-    <Paper p="sm" mb="md" style={{ backgroundColor }} shadow="xs">
-      <Text c={textColor} fw={500} size="sm" mb={5}>{statusText}</Text>
-      {totalSections > 0 && (
-         <Progress value={progressValue} color={progressColor} striped animated={completedSections < totalSections} />
+    <Paper p="md" mb="md" shadow="xs" radius="md">
+      <Box mb="lg">
+        <Text size="lg" fw={700} ta="center" mb="sm">Overall Course Progress</Text>
+        <Flex direction="column" align="center">
+          <RingProgress
+            size={150}
+            thickness={12}
+            roundCaps
+            sections={[{ value: overallProgressValue, color: getProgressColor(overallProgressValue) }]}
+            label={
+              <Text c={getProgressColor(overallProgressValue)} fw={700} ta="center" size="xl">
+                {Math.round(overallProgressValue)}%
+              </Text>
+            }
+          />
+          <Text size="sm" c="dimmed" mt="xs">
+            {overallCompleted} / {overallTotal} sections complete
+          </Text>
+        </Flex>
+      </Box>
+
+      {unitProgressList && unitProgressList.length > 0 && (
+        <Box mt="xl">
+          <Text size="lg" fw={700} ta="center" mb="md">Unit Progress</Text>
+          <Group justify="center" gap="lg">
+            {unitProgressList.map((unitProg, index) => (
+              <Flex key={index} direction="column" align="center" gap="xs">
+                <RingProgress
+                  size={100}
+                  thickness={8}
+                  roundCaps
+                  sections={[{ value: unitProg.value, color: getProgressColor(unitProg.value) }]}
+                  label={
+                    <Text c={getProgressColor(unitProg.value)} fw={700} ta="center" size="md">
+                      {Math.round(unitProg.value)}%
+                    </Text>
+                  }
+                />
+                <Text ta="center" size="sm" style={{ maxWidth: 100 }}>{unitProg.name}</Text>
+                 <Text size="xs" c="dimmed">
+                    {unitProg.completed} / {unitProg.total}
+                </Text>
+              </Flex>
+            ))}
+          </Group>
+        </Box>
       )}
-      <Text c="dimmed" size="xs" mt={3}>{completedSections} / {totalSections} sections considered complete.</Text>
     </Paper>
   );
 };

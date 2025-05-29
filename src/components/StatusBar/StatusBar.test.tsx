@@ -1,205 +1,294 @@
 // src/components/StatusBar/StatusBar.test.tsx
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import '@testing-library/jest-dom';
 import { MantineProvider } from '@mantine/core';
 import StatusBar from './StatusBar';
 import type { Course } from '../../types';
-import { isRichTextEmpty } from '../../utils/completionUtils';
+import { EMPTY_ARRAY_JSON_STRING } from '../../utils/constants';
 
 // Mock the isRichTextEmpty utility
-jest.mock('../../utils/completionUtils');
-const mockedIsRichTextEmpty = isRichTextEmpty as jest.MockedFunction<typeof isRichTextEmpty>;
+vi.mock('../../utils/completionUtils', () => ({
+  isRichTextEmpty: vi.fn(),
+}));
+import { isRichTextEmpty } from '../../utils/completionUtils';
 
-// A wrapper to provide Mantine theme context, essential for Mantine components
-const AllTheProviders: React.FC<{children: React.ReactNode}> = ({ children }) => {
-  return (
-    <MantineProvider>
-      {children}
-    </MantineProvider>
-  );
+
+const mockCourseEmpty: Course = {
+  id: '1',
+  title: '',
+  name: '',
+  description: EMPTY_ARRAY_JSON_STRING,
+  biblicalBasis: EMPTY_ARRAY_JSON_STRING,
+  materials: EMPTY_ARRAY_JSON_STRING,
+  pacing: EMPTY_ARRAY_JSON_STRING,
+  units: [],
 };
 
-const renderWithProviders = (ui: React.ReactElement, options?: any) =>
-  render(ui, { wrapper: AllTheProviders, ...options });
+const mockCoursePartial: Course = {
+  id: '2',
+  title: 'Partial Course Title', // Plain text, non-empty
+  name: 'PAR101', // Plain text, non-empty
+  description: 'Some description content', // Rich text, will be mocked as non-empty
+  biblicalBasis: EMPTY_ARRAY_JSON_STRING, // Rich text, will be mocked as empty
+  materials: 'Some materials content', // Rich text, will be mocked as non-empty
+  pacing: EMPTY_ARRAY_JSON_STRING, // Rich text, will be mocked as empty
+  units: [
+    {
+      id: 'unit1_partial',
+      unitName: 'Unit 1 Partial', // Plain text, non-empty
+      timeAllotted: '1 Week', // Plain text, non-empty (though not part of progress calc in this version)
+      learningObjectives: 'Some objectives content', // Rich, mocked non-empty
+      standards: EMPTY_ARRAY_JSON_STRING, // Rich, mocked empty
+      biblicalIntegration: 'Some integration content', // Rich, mocked non-empty
+      instructionalStrategiesActivities: EMPTY_ARRAY_JSON_STRING, // Rich, mocked empty
+      resources: 'Some resources content', // Rich, mocked non-empty
+      assessments: EMPTY_ARRAY_JSON_STRING, // Rich, mocked empty
+    },
+    {
+      id: 'unit2_full',
+      unitName: 'Unit 2 Full', // Plain text, non-empty
+      timeAllotted: '2 Weeks', // Plain text, non-empty (not part of progress)
+      learningObjectives: 'Full objectives content', // Rich, mocked non-empty
+      standards: 'Full standards content', // Rich, mocked non-empty
+      biblicalIntegration: 'Full integration content', // Rich, mocked non-empty
+      instructionalStrategiesActivities: 'Full activities content', // Rich, mocked non-empty
+      resources: 'Full resources content', // Rich, mocked non-empty
+      assessments: 'Full assessments content', // Rich, mocked non-empty
+    },
+  ],
+};
+
+const mockCourseFull: Course = {
+  id: '3',
+  title: 'Full Course Title', // Plain
+  name: 'FULL202', // Plain
+  description: 'Full description content', // Rich
+  biblicalBasis: 'Full biblical basis content', // Rich
+  materials: 'Full materials content', // Rich
+  pacing: 'Full pacing guide content', // Rich
+  units: [
+    {
+      id: 'unit3_full_course',
+      unitName: 'Unit 3 of Full Course', // Plain
+      timeAllotted: '3 Weeks', // Plain (not part of progress)
+      learningObjectives: 'Covered content', // Rich
+      standards: 'Covered content', // Rich
+      biblicalIntegration: 'Covered content', // Rich
+      instructionalStrategiesActivities: 'Covered content', // Rich
+      resources: 'Covered content', // Rich
+      assessments: 'Covered content', // Rich
+    },
+  ],
+};
 
 
-describe('StatusBar', () => {
-  const baseMockCourse: Course = {
-    id: 'course1',
-    title: 'Test Course',
-    name: 'COURSE101',
-    description: 'Course description',
-    biblicalBasis: 'Biblical basis content',
-    materials: 'Materials content',
-    pacing: 'Pacing details',
-    units: [
-      {
-        id: 'unit1',
-        unitName: 'Test Unit 1',
-        timeAllotted: '1 week',
-        learningObjectives: 'Objectives for Unit 1',
-        standards: 'Standards for Unit 1',
-        biblicalIntegration: 'Integration for Unit 1',
-        instructionalStrategiesActivities: 'Strategies for Unit 1',
-        resources: 'Resources for Unit 1',
-        assessments: 'Assessments for Unit 1',
-      },
-      {
-        id: 'unit2',
-        unitName: 'Test Unit 2',
-        timeAllotted: '2 weeks',
-        learningObjectives: 'Objectives for Unit 2',
-        standards: 'Standards for Unit 2',
-        biblicalIntegration: 'Integration for Unit 2',
-        instructionalStrategiesActivities: 'Strategies for Unit 2',
-        resources: 'Resources for Unit 2',
-        assessments: 'Assessments for Unit 2',
-      },
-    ],
-  };
-
-  // Total sections from baseMockCourse:
-  // Course level: title, name, description, biblicalBasis, materials, pacing (6)
-  // Unit 1: unitName, learningObjectives, standards, biblicalIntegration, instructionalStrategiesActivities, resources, assessments (7)
-  // Unit 2: unitName, learningObjectives, standards, biblicalIntegration, instructionalStrategiesActivities, resources, assessments (7)
-  // Total = 6 + 7 + 7 = 20 sections
-
+describe('StatusBar Component', () => {
   beforeEach(() => {
     // Reset mocks before each test
-    mockedIsRichTextEmpty.mockReset();
+    (isRichTextEmpty as ReturnType<typeof vi.fn>).mockReset();
   });
 
-  test('renders null if no course is provided', () => {
-    const { container } = renderWithProviders(<StatusBar currentCourse={null} />);
+  const renderWithProvider = (component: React.ReactElement) => {
+    return render(<MantineProvider>{component}</MantineProvider>);
+  };
+
+  test('renders null when currentCourse is null', () => {
+    const { container } = renderWithProvider(<StatusBar currentCourse={null} />);
     expect(container.firstChild).toBeNull();
   });
 
-  test('course with all sections empty', () => {
-    mockedIsRichTextEmpty.mockReturnValue(true); // All rich text fields are empty
-    const emptyCourse: Course = {
-      ...baseMockCourse,
-      title: '', // plain text empty
-      name: '  ', // plain text effectively empty
-      description: '[]', 
-      biblicalBasis: '[]',
-      materials: '[]',
-      pacing: '[]',
-      units: [
-        { ...baseMockCourse.units[0], unitName: '', learningObjectives: '[]', standards: '[]', biblicalIntegration: '[]', instructionalStrategiesActivities: '[]', resources: '[]', assessments: '[]' },
-        { ...baseMockCourse.units[1], unitName: ' ', learningObjectives: '[]', standards: '[]', biblicalIntegration: '[]', instructionalStrategiesActivities: '[]', resources: '[]', assessments: '[]' },
-      ],
-    };
-    renderWithProviders(<StatusBar currentCourse={emptyCourse} />);
-    expect(screen.getByText('20 section(s) need attention.')).toBeInTheDocument();
-    expect(screen.getByText('0 / 20 sections considered complete.')).toBeInTheDocument();
-    // Check for progress bar attributes
-    const progressBar = screen.getByRole('progressbar');
-    expect(progressBar).toHaveAttribute('aria-valuenow', '0');
-    // Color check is tricky without deeper theme knowledge or visual regression.
-    // We can check for the presence of the progress bar.
-    expect(progressBar).toBeInTheDocument();
-  });
-
-  test('course with some sections complete', () => {
-    let callCount = 0;
-    mockedIsRichTextEmpty.mockImplementation(() => {
-      callCount++;
-      // Make first 2 rich text fields non-empty, rest empty
-      // Course: description, biblicalBasis (non-empty) = 2
-      // Unit 1: learningObjectives (non-empty) = 1
-      // Total rich text fields: 4 (course) + 2*6 (units) = 16
-      // Mocking 3 rich text as non-empty
-      return callCount > 3; 
+  describe('Overall Course Progress', () => {
+    // Overall course fields: title, name (plain text); description, biblicalBasis, materials, pacing (rich text)
+    // Total: 2 plain + 4 rich = 6 fields
+    test('renders title and correct progress for an empty course', () => {
+      (isRichTextEmpty as ReturnType<typeof vi.fn>).mockReturnValue(true); // All rich text is empty
+      renderWithProvider(<StatusBar currentCourse={mockCourseEmpty} />);
+      
+      expect(screen.getByText('Overall Course Progress')).toBeInTheDocument();
+      // mockCourseEmpty: title='', name='' (2 empty plain) + 4 rich (mocked empty) = 0/6
+      expect(screen.getByText('0%')).toBeInTheDocument();
+      expect(screen.getByText('0 / 6 sections complete')).toBeInTheDocument(); 
     });
 
-    const partiallyCompleteCourse: Course = {
-      ...baseMockCourse,
-      title: 'Full Title', // complete (1)
-      name: 'COURSE101',    // complete (1)
-      // description: uses mock (non-empty) (1)
-      // biblicalBasis: uses mock (non-empty) (1)
-      // materials: uses mock (non-empty) (1)
-      pacing: '[]', // uses mock (empty)
-      units: [
-        { ...baseMockCourse.units[0], 
-          unitName: 'Unit 1 Name', // complete (1)
-          // learningObjectives: uses mock (empty)
-          standards: '[]', // uses mock (empty)
-          // ... rest use mock (empty)
-        },
-        { ...baseMockCourse.units[1], 
-          unitName: '', // empty
-          // ... all rich text use mock (empty)
-        },
-      ],
-    };
-    // Completed: title, name, description, biblicalBasis, materials, Unit1.unitName = 6
-    // Total = 20
-    renderWithProviders(<StatusBar currentCourse={partiallyCompleteCourse} />);
-    expect(screen.getByText('14 section(s) need attention.')).toBeInTheDocument();
-    expect(screen.getByText('6 / 20 sections considered complete.')).toBeInTheDocument();
-    const progressBar = screen.getByRole('progressbar');
-    expect(progressBar).toHaveAttribute('aria-valuenow', '30'); // 6/20 * 100 = 30
+    test('renders correct progress when some course fields are filled', () => {
+      // mockCoursePartial: title, name (2 filled plain)
+      // description, materials (2 rich, mocked non-empty)
+      // biblicalBasis, pacing (2 rich, mocked empty)
+      // Total filled = 2 plain + 2 rich = 4. Total fields = 6.
+      (isRichTextEmpty as ReturnType<typeof vi.fn>).mockImplementation(value => {
+        if (value === mockCoursePartial.description || value === mockCoursePartial.materials) return false; 
+        return true; // biblicalBasis, pacing are considered empty
+      });
+
+      renderWithProvider(<StatusBar currentCourse={mockCoursePartial} />);
+      expect(screen.getByText('Overall Course Progress')).toBeInTheDocument();
+      expect(screen.getByText('67%')).toBeInTheDocument(); // Math.round((4/6)*100)
+      expect(screen.getByText('4 / 6 sections complete')).toBeInTheDocument();
+    });
+
+    test('renders 100% when all course fields are filled', () => {
+      (isRichTextEmpty as ReturnType<typeof vi.fn>).mockReturnValue(false); // All rich text is non-empty
+      // mockCourseFull: title, name (2 filled plain) + 4 rich (mocked non-empty) = 6/6
+      renderWithProvider(<StatusBar currentCourse={mockCourseFull} />);
+      expect(screen.getByText('Overall Course Progress')).toBeInTheDocument();
+      expect(screen.getByText('100%')).toBeInTheDocument();
+      expect(screen.getByText('6 / 6 sections complete')).toBeInTheDocument();
+    });
   });
 
-  test('course with all sections complete', () => {
-    mockedIsRichTextEmpty.mockReturnValue(false); // All rich text fields are non-empty
-    const fullCourse: Course = { ...baseMockCourse }; // Assuming baseMockCourse has non-empty plain text for titles/names
-    
-    renderWithProviders(<StatusBar currentCourse={fullCourse} />);
-    expect(screen.getByText('All 20 sections look complete!')).toBeInTheDocument();
-    expect(screen.getByText('20 / 20 sections considered complete.')).toBeInTheDocument();
-    const progressBar = screen.getByRole('progressbar');
-    expect(progressBar).toHaveAttribute('aria-valuenow', '100');
+  describe('Unit Progress', () => {
+    // Unit fields: unitName (plain text); learningObjectives, standards, biblicalIntegration, 
+    // instructionalStrategiesActivities, resources, assessments (rich text)
+    // Total: 1 plain + 6 rich = 7 fields per unit.
+    test('renders unit progress title and individual unit progress', () => {
+        (isRichTextEmpty as ReturnType<typeof vi.fn>).mockImplementation(value => {
+            // Course level (consistent with previous test for mockCoursePartial)
+            if (value === mockCoursePartial.description || value === mockCoursePartial.materials) return false;
+            if (value === mockCoursePartial.biblicalBasis || value === mockCoursePartial.pacing) return true;
+            
+            const unit1 = mockCoursePartial.units![0];
+            // Unit 1 (Partial): unitName (plain, filled=1)
+            // Rich: learningObjectives, biblicalIntegration, resources (mocked non-empty=3)
+            // Rich: standards, instructionalStrategiesActivities, assessments (mocked empty=0)
+            // Total for Unit 1 = 1 + 3 = 4 filled / 7 total.
+            if (value === unit1.learningObjectives || value === unit1.biblicalIntegration || value === unit1.resources) return false;
+            if (value === unit1.standards || value === unit1.instructionalStrategiesActivities || value === unit1.assessments) return true;
+
+            const unit2 = mockCoursePartial.units![1];
+            // Unit 2 (Full): unitName (plain, filled=1)
+            // All 6 rich text fields (mocked non-empty=6)
+            // Total for Unit 2 = 1 + 6 = 7 filled / 7 total.
+            if ([unit2.learningObjectives, unit2.standards, unit2.biblicalIntegration, unit2.instructionalStrategiesActivities, unit2.resources, unit2.assessments].includes(value as string)) return false;
+            
+            return true; // Default for any other unhandled rich text (should not happen in this test)
+        });
+
+      renderWithProvider(<StatusBar currentCourse={mockCoursePartial} />);
+      expect(screen.getByText('Unit Progress')).toBeInTheDocument();
+
+      // Unit 1: Partial (4 / 7 fields)
+      expect(screen.getByText('Unit 1 Partial')).toBeInTheDocument();
+      expect(screen.getByText('57%')).toBeInTheDocument(); // Math.round((4/7)*100)
+      const unit1ProgressText = screen.getAllByText('4 / 7').find(el => el.closest('div')?.textContent?.includes('Unit 1 Partial'));
+      expect(unit1ProgressText).toBeInTheDocument();
+
+      // Unit 2: Full (7 / 7 fields)
+      expect(screen.getByText('Unit 2 Full')).toBeInTheDocument();
+      const all100PercentElements = screen.getAllByText('100%'); // Overall can also be 100% in some scenarios
+      const unit2_100Percent = all100PercentElements.find(el => el.closest('div')?.textContent?.includes('Unit 2 Full'));
+      expect(unit2_100Percent).toBeInTheDocument();
+      
+      const unit2ProgressText = screen.getAllByText('7 / 7').find(el => el.closest('div')?.textContent?.includes('Unit 2 Full'));
+      expect(unit2ProgressText).toBeInTheDocument();
+    });
+
+    test('does not render unit progress section if no units exist', () => {
+      (isRichTextEmpty as ReturnType<typeof vi.fn>).mockReturnValue(true); // All rich text empty
+      renderWithProvider(<StatusBar currentCourse={mockCourseEmpty} />); // mockCourseEmpty has no units
+      expect(screen.queryByText('Unit Progress')).not.toBeInTheDocument();
+    });
   });
 
-  test('course with no trackable units (only course-level fields)', () => {
-    mockedIsRichTextEmpty.mockReturnValue(true); // All rich text empty
-    const courseOnly: Course = {
-      id: 'course-only',
-      title: '',
-      name: '',
-      description: '[]',
-      biblicalBasis: '[]',
-      materials: '[]',
-      pacing: '[]',
-      units: [], // No units
+  describe('Completion Logic Specifics (Overall Course context)', () => {
+    // Base for a course with all rich text fields empty, and 'name' plain text field empty.
+    // We will vary 'title' (plain) and 'description' (rich).
+    // Total 6 overall fields.
+    const baseCourseForLogicTest: Course = {
+        id: 'logicTest1',
+        name: '', // plain, empty
+        biblicalBasis: EMPTY_ARRAY_JSON_STRING, // rich, empty by mock default
+        materials: EMPTY_ARRAY_JSON_STRING, // rich, empty by mock default
+        pacing: EMPTY_ARRAY_JSON_STRING, // rich, empty by mock default
+        units: [],
+        // Fields to be set by each test:
+        title: '', 
+        description: EMPTY_ARRAY_JSON_STRING,
     };
-    // Total sections: title, name, description, biblicalBasis, materials, pacing (6)
-    renderWithProviders(<StatusBar currentCourse={courseOnly} />);
-    expect(screen.getByText('6 section(s) need attention.')).toBeInTheDocument();
-    expect(screen.getByText('0 / 6 sections considered complete.')).toBeInTheDocument();
-    const progressBar = screen.getByRole('progressbar');
-    expect(progressBar).toHaveAttribute('aria-valuenow', '0');
-  });
-  
-  test('course with one unit, all complete', () => {
-    mockedIsRichTextEmpty.mockReturnValue(false);
-    const oneUnitCourse: Course = {
-        id: 'one-unit-course',
-        title: 'Course Title',
-        name: 'C101',
-        description: 'desc',
-        biblicalBasis: 'bb',
-        materials: 'mat',
-        pacing: 'pace',
-        units: [{
-            id: 'u1',
-            unitName: 'Unit 1',
-            timeAllotted: '1w',
-            learningObjectives: 'obj',
-            standards: 'std',
-            biblicalIntegration: 'bi',
-            instructionalStrategiesActivities: 'isa',
-            resources: 'res',
-            assessments: 'ass',
-        }]
-    };
-    // Total: 6 (course) + 7 (unit) = 13 sections
-    renderWithProviders(<StatusBar currentCourse={oneUnitCourse} />);
-    expect(screen.getByText('All 13 sections look complete!')).toBeInTheDocument();
-    expect(screen.getByText('13 / 13 sections considered complete.')).toBeInTheDocument();
+
+    test('rich text field (description) considered empty by mock', () => {
+      (isRichTextEmpty as ReturnType<typeof vi.fn>).mockImplementation((value) => {
+        // If value is EMPTY_ARRAY_JSON_STRING or specifically the 'description_empty_content', it's empty.
+        return value === EMPTY_ARRAY_JSON_STRING || value === 'description_empty_content';
+      });
+      const testCourse: Course = { ...baseCourseForLogicTest, title: '', description: 'description_empty_content' };
+      renderWithProvider(<StatusBar currentCourse={testCourse} />);
+      // title (plain empty), name (plain empty)
+      // description (rich mocked empty), biblicalBasis/materials/pacing (rich mocked empty)
+      // Expected: 0 / 6 complete
+      expect(screen.getByText('0%')).toBeInTheDocument();
+      expect(screen.getByText('0 / 6 sections complete')).toBeInTheDocument();
+    });
+
+    test('rich text field (description) considered non-empty by mock', () => {
+      (isRichTextEmpty as ReturnType<typeof vi.fn>).mockImplementation((value) => {
+        // Only 'description_filled_content' is non-empty. All others are empty.
+        return value !== 'description_filled_content'; 
+      });
+      const testCourse: Course = { ...baseCourseForLogicTest, title: '', description: 'description_filled_content' };
+      renderWithProvider(<StatusBar currentCourse={testCourse} />);
+      // title (plain empty), name (plain empty)
+      // description (rich mocked non-empty = 1), biblicalBasis/materials/pacing (rich mocked empty)
+      // Expected: 1 / 6 complete
+      expect(screen.getByText('17%')).toBeInTheDocument(); // Math.round(1/6 * 100)
+      expect(screen.getByText('1 / 6 sections complete')).toBeInTheDocument();
+    });
+
+    test('plain text field (title) is empty (whitespace)', () => {
+      (isRichTextEmpty as ReturnType<typeof vi.fn>).mockReturnValue(true); // all rich text fields are empty
+      const testCourse: Course = { ...baseCourseForLogicTest, title: '  ', description: EMPTY_ARRAY_JSON_STRING };
+      renderWithProvider(<StatusBar currentCourse={testCourse} />);
+      // title (plain empty due to whitespace), name (plain empty)
+      // all rich text fields mocked as empty
+      // Expected: 0 / 6 complete
+      expect(screen.getByText('0%')).toBeInTheDocument();
+      expect(screen.getByText('0 / 6 sections complete')).toBeInTheDocument();
+    });
+
+    test('plain text field (title) is filled', () => {
+      (isRichTextEmpty as ReturnType<typeof vi.fn>).mockReturnValue(true); // all rich text fields are empty
+      const testCourse: Course = { ...baseCourseForLogicTest, title: 'Actual Title', description: EMPTY_ARRAY_JSON_STRING };
+      renderWithProvider(<StatusBar currentCourse={testCourse} />);
+      // title (plain filled = 1), name (plain empty)
+      // all rich text fields mocked as empty
+      // Expected: 1 / 6 complete
+      expect(screen.getByText('17%')).toBeInTheDocument();
+      expect(screen.getByText('1 / 6 sections complete')).toBeInTheDocument();
+    });
   });
 
+  // Test RingProgress rendering presence by checking for their percentage labels.
+  describe('RingProgress Rendering Check', () => {
+    beforeEach(() => {
+        (isRichTextEmpty as ReturnType<typeof vi.fn>).mockReset();
+    });
+    const renderWithProvider = (component: React.ReactElement) => {
+        return render(<MantineProvider>{component}</MantineProvider>);
+    };
+
+    test('RingProgress labels are rendered for overall progress and units', () => {
+        // Use mockCoursePartial, which has defined progress for overall and units
+        (isRichTextEmpty as ReturnType<typeof vi.fn>).mockImplementation(value => {
+            if (value === mockCoursePartial.description || value === mockCoursePartial.materials) return false;
+            if (value === mockCoursePartial.biblicalBasis || value === mockCoursePartial.pacing) return true;
+            const unit1 = mockCoursePartial.units![0];
+            if (value === unit1.learningObjectives || value === unit1.biblicalIntegration || value === unit1.resources) return false;
+            if (value === unit1.standards || value === unit1.instructionalStrategiesActivities || value === unit1.assessments) return true;
+            const unit2 = mockCoursePartial.units![1];
+            if ([unit2.learningObjectives, unit2.standards, unit2.biblicalIntegration, unit2.instructionalStrategiesActivities, unit2.resources, unit2.assessments].includes(value as string)) return false;
+            return true;
+        });
+        renderWithProvider(<StatusBar currentCourse={mockCoursePartial} />);
+        
+        // Overall progress: 4/6 = 67%
+        expect(screen.getByText('67%')).toBeInTheDocument(); 
+
+        // Unit 1 progress: 4/7 = 57%
+        expect(screen.getByText('57%')).toBeInTheDocument(); 
+
+        // Unit 2 progress: 7/7 = 100%
+        // Need to find the specific 100% tied to Unit 2
+        const unit2ProgressContainer = screen.getByText('Unit 2 Full').closest('div');
+        expect(unit2ProgressContainer).toHaveTextContent('100%');
+    });
+  });
 });

@@ -15,6 +15,7 @@ import {
   Paper,
   Text,
   Box,
+  Tabs, // Added Tabs
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import {
@@ -50,6 +51,8 @@ import { type JSONContent } from '@tiptap/core';
 // export const EMPTY_ARRAY_JSON_STRING = JSON.stringify([]); // Represents empty content for a Tiptap field
 // Now imported from constants.ts
 import { EMPTY_ARRAY_JSON_STRING } from './utils/constants';
+// Import the constant for scrolling to the overall course section
+import { COURSE_HEADER_SECTION_ID } from './components/CurriculumEditor/courseSerializer'; 
 
 
 type ViewMode = 'editor' | 'comparison';
@@ -58,6 +61,7 @@ function App() {
   const [mobileOpened, { toggle: toggleMobile }] = useDisclosure();
   const [desktopOpened, { toggle: toggleDesktop }] = useDisclosure(true);
   const [viewMode, setViewMode] = useState<ViewMode>('editor');
+  const [activeTab, setActiveTab] = useState<string | null>('overall'); // State for active tab
 
   const editorRef = useRef<CurriculumEditorRef>(null); // Added editorRef
 
@@ -72,6 +76,35 @@ function App() {
   // For comparison view
   const [compareDocId1, setCompareDocId1] = useState<string | null>(null);
   const [compareDocId2, setCompareDocId2] = useState<string | null>(null);
+
+  // Effect for scrolling when activeTab, currentCourse, or editorKey changes
+  useEffect(() => {
+    // Only scroll if in editor view, an editor instance exists, a course is loaded, and a tab is active
+    if (viewMode === 'editor' && editorRef.current && currentCourse && activeTab) {
+      // The editorKey dependency helps ensure this runs after the editor might have been re-keyed/re-mounted.
+      // The activeTab dependency ensures it runs when the tab changes.
+      // currentCourse dependency ensures it runs if the course itself changes (though editorKey handles this too).
+
+      // No explicit timeout needed initially, as the re-keying of CurriculumEditor per tab
+      // and this useEffect's dependencies should manage the timing.
+      // The scrollToSection method in CurriculumEditor has its own requestAnimationFrame fallback.
+
+      if (activeTab === 'overall') {
+        editorRef.current.scrollToSection(COURSE_HEADER_SECTION_ID);
+      } else {
+        // Check if the activeTab corresponds to a valid unit ID before scrolling
+        const unitExists = currentCourse.units?.find(unit => unit.id === activeTab);
+        if (unitExists) {
+          editorRef.current.scrollToSection(activeTab);
+        } else {
+          // This case should ideally not happen if tabs are generated from currentCourse.units.
+          // But as a safeguard or if activeTab could be set to an invalid unit ID elsewhere:
+          console.warn(`Unit with ID "${activeTab}" not found for scrolling. Scrolling to course header as fallback.`);
+          editorRef.current.scrollToSection(COURSE_HEADER_SECTION_ID);
+        }
+      }
+    }
+  }, [activeTab, currentCourse, editorKey, viewMode, editorRef]); // editorRef is stable, but good to list explicit dependencies.
 
   const loadCourseMetadata = useCallback(async () => {
     setIsLoading(true);
@@ -95,6 +128,7 @@ function App() {
       setCurrentCourse(null);
       setSelectedCourseId(null);
       setEditorKey((prev) => prev + 1); // Reset editor
+      setActiveTab('overall'); // Reset tab to overall
       return;
     }
     setIsLoading(true);
@@ -105,10 +139,12 @@ function App() {
         setCurrentCourse(courseData);
         setSelectedCourseId(courseId);
         setEditorKey((prev) => prev + 1); // Force re-initialization of Tiptap editor
+        setActiveTab('overall'); // Reset tab to overall when new course loads
       } else {
         setError(`Course with ID ${courseId} not found.`);
         setCurrentCourse(null);
         setSelectedCourseId(null);
+        setActiveTab('overall'); // Reset tab
       }
     } catch (err) {
       setError('Failed to load course.');
@@ -242,25 +278,7 @@ function App() {
                     Add Unit
                   </Button>
                 </Tooltip>
-                <Tooltip label="Copy content as Markdown" withArrow>
-                  <Button
-                    variant="outline"
-                    onClick={() => editorRef.current?.triggerCopyMarkdown()}
-                    disabled={!currentCourse || isLoading}
-                    leftSection={<IconMarkdown size={16} />}
-                  >
-                    Copy Markdown
-                  </Button>
-                </Tooltip>
-                <Tooltip label="Submit your suggested changes" withArrow>
-                  <Button
-                    onClick={() => editorRef.current?.triggerSuggestChanges()}
-                    disabled={!currentCourse || isLoading}
-                    leftSection={<IconDeviceFloppy size={16} />}
-                  >
-                    Suggest Changes
-                  </Button>
-                </Tooltip>
+                {/* "Copy Markdown" and "Suggest Changes" buttons removed from here */}
               </>
             )}
           </Group>
@@ -307,6 +325,7 @@ function App() {
                     setCurrentCourse(null);
                     setSelectedCourseId(null);
                     setEditorKey(k => k + 1);
+                    setActiveTab('overall'); // Reset tab on clear
                 }
               }}
               disabled={isLoading}
@@ -363,18 +382,46 @@ function App() {
 
         {viewMode === 'editor' && (
           <>
-            <StatusBar currentCourse={currentCourse} /> 
-            {currentCourse && selectedCourseId && (
-              <CurriculumEditor
-                ref={editorRef} // Pass the ref
-                key={editorKey} // Force re-mount when course changes for proper Tiptap init
-                initialCourseData={currentCourse}
-                onSave={handleSuggestChanges} 
-                courseId={selectedCourseId}
-              />
-            )}
-            {!currentCourse && !isLoading && (
-              <Paper p="xl" withBorder style={{ textAlign: 'center' }}>
+            <StatusBar currentCourse={currentCourse} />
+            {currentCourse && selectedCourseId ? (
+              <Tabs value={activeTab} onChange={setActiveTab} mt="md">
+                <Tabs.List>
+                  <Tabs.Tab value="overall">Overall Course</Tabs.Tab>
+                  {currentCourse.units?.map((unit, index) => (
+                    <Tabs.Tab value={unit.id} key={unit.id}>
+                      Unit {index + 1}: {unit.unitName || 'Unnamed Unit'}
+                    </Tabs.Tab>
+                  ))}
+                </Tabs.List>
+
+                <Tabs.Panel value="overall" pt="md">
+                  <CurriculumEditor
+                    ref={editorRef}
+                    key={`${editorKey}-overall`} // Ensure unique key for editor instance
+                    initialCourseData={currentCourse}
+                    onSave={handleSuggestChanges}
+                    courseId={selectedCourseId}
+                    // activeUnitId={null} // In a future step, this could control scrolling
+                  />
+                </Tabs.Panel>
+
+                {currentCourse.units?.map((unit) => (
+                  <Tabs.Panel value={unit.id} key={unit.id} pt="md">
+                    <CurriculumEditor
+                      ref={editorRef} // Same ref, but might be problematic if multiple editors are truly active
+                                      // For this step, only one panel is visible, so it's okay.
+                      key={`${editorKey}-${unit.id}`} // Ensure unique key for editor instance per tab
+                      initialCourseData={currentCourse}
+                      onSave={handleSuggestChanges}
+                      courseId={selectedCourseId}
+                      // activeUnitId={unit.id} // In a future step, this could control scrolling
+                    />
+                  </Tabs.Panel>
+                ))}
+              </Tabs>
+            ) : (
+              !isLoading && ( // Show "No course selected" only if not loading
+              <Paper p="xl" withBorder style={{ textAlign: 'center', marginTop: 'md' }}>
                 <IconFolderOpen
                   size={48}
                   stroke={1.5}
@@ -386,23 +433,10 @@ function App() {
                   start editing.
                 </Text>
               </Paper>
+              )
             )}
           </>
         )}
-        {/* This part for CurriculumEditor and the "No course selected" message was restructured */}
-        {/* {viewMode === 'editor' && currentCourse && selectedCourseId &&(
-          <CurriculumEditor
-            ref={editorRef} // Pass the ref
-            key={editorKey} // Force re-mount when course changes for proper Tiptap init
-            initialCourseData={currentCourse}
-            onSave={handleSuggestChanges} 
-            courseId={selectedCourseId}
-          />
-        )} */}
-        {/* {viewMode === 'editor' && !currentCourse && !isLoading && (
-          // This is now handled inside the new viewMode === 'editor' block
-        )} */}
-
         {viewMode === 'comparison' && (
           <ComparisonView docId1={compareDocId1} docId2={compareDocId2} />
         )}
