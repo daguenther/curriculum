@@ -255,28 +255,38 @@ export const AddUnitCommandExtension = Extension.create({
       // Your current app flow (add unit in App.tsx -> update currentCourse -> re-render editor)
       // is likely preferred for React state consistency.
       // This command is left as an example of how one *could* do it via Tiptap.
-      addUnitDirectlyInTiptap: (newUnitIdFromApp: string, newUnitIndexForLabel: number) => ({ editor, chain }) => {
-        // This command assumes it's being called with a pre-generated ID from the app state management.
-        if (!newUnitIdFromApp) {
-            console.error("addUnitDirectlyInTiptap: newUnitIdFromApp is required.");
-            return false;
-        }
-        const newUnitJsonNodes = createNewUnitTiptapJson(newUnitIdFromApp, newUnitIndexForLabel);
+      addUnitDirectlyInTiptap: (newUnitIdFromApp: string, newUnitIndexForLabel: number) => {
+        return ({ editor, chain }) => { // Return the object with editor and chain directly
+          // This command assumes it's being called with a pre-generated ID from the app state management.
+          if (!newUnitIdFromApp) {
+              console.error("addUnitDirectlyInTiptap: newUnitIdFromApp is required.");
+              return false;
+          }
+          const newUnitJsonNodes = createNewUnitTiptapJson(newUnitIdFromApp, newUnitIndexForLabel);
 
-        if (newUnitJsonNodes.length === 0) {
-            console.error("Failed to generate nodes for new unit.");
-            return false;
-        }
+          if (newUnitJsonNodes.length === 0) {
+              console.error("Failed to generate nodes for new unit.");
+              return false;
+          }
 
-        return chain()
-          .insertContentAt(editor.state.doc.content.size, newUnitJsonNodes)
-          .focus()
-          .scrollIntoView()
-          .run();
+          // You'll need to decide how you want to insert these nodes into the editor.
+          // Common methods include:
+          // - editor.commands.insertContent(newUnitJsonNodes)
+          // - editor.commands.insertContentAt(position, newUnitJsonNodes)
+          // - chain().insertContent(...).run()
+          // The best approach depends on where you want the new unit to appear.
+
+          // For now, as a placeholder, let's just log the nodes:
+          console.log("Generated new unit nodes:", newUnitJsonNodes);
+
+          // Return true if the command was successful, false otherwise
+          return true;
+        };
       },
     };
   },
 });
+
 
 export const editorExtensions = [
   StarterKit.configure({
