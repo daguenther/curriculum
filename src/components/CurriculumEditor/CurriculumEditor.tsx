@@ -6,8 +6,8 @@ import { type Course } from '../../types';
 import { courseToTiptapJson, COURSE_HEADER_SECTION_ID } from './courseSerializer';
 import { RichTextEditor } from '@mantine/tiptap';
 import '@mantine/tiptap/styles.css';
-import { Button, Stack, Tooltip, type MantineTheme } from '@mantine/core'; // Removed Alert and useMantineThemeCore
-import { IconDeviceFloppy, IconClipboardText, IconCheck, IconAlertTriangle } from '@tabler/icons-react'; // IconAlertTriangle might still be useful for notification
+import { Button, Stack, Tooltip, type MantineTheme } from '@mantine/core';
+import { IconDeviceFloppy, IconClipboardText, IconCheck, IconAlertTriangle } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 
 export interface CurriculumEditorRef {
@@ -17,15 +17,13 @@ export interface CurriculumEditorRef {
 interface CurriculumEditorProps {
   initialCourseData: Course;
   onSave: (editorContent: JSONContent) => Promise<void>;
-  courseId: string; // Retained for keying or other potential uses
+  courseId: string;
   isApprovedCourse: boolean;
   isSuggestion: boolean;
 }
 
 const CurriculumEditor = forwardRef<CurriculumEditorRef, CurriculumEditorProps>(
   ({ initialCourseData, onSave, courseId, isApprovedCourse, isSuggestion }, ref) => {
-    // const theme = useMantineThemeCore(); // No longer needed here if Alert is removed
-
     const editor = useEditor({
       immediatelyRender: false,
       extensions: editorExtensions,
@@ -39,12 +37,15 @@ const CurriculumEditor = forwardRef<CurriculumEditorRef, CurriculumEditorProps>(
     }, [onSave]);
 
     useEffect(() => {
+      // console.log('[DEBUG CurriculumEditor] initialCourseData/editor effect triggered.'); // Keep logs if needed
       if (initialCourseData && editor && !editor.isDestroyed) {
+        // console.log('[DEBUG CurriculumEditor] Setting content. initialCourseData.title:', initialCourseData.title);
         const tiptapJson = courseToTiptapJson(initialCourseData);
         try {
           editor.commands.setContent(tiptapJson, false);
+          // console.log('[DEBUG CurriculumEditor] Content set successfully.');
         } catch (error) {
-            console.error("Error setting Tiptap content:", error, "Problematic JSON:", tiptapJson);
+            console.error("[DEBUG CurriculumEditor] Error setting Tiptap content:", error, "Problematic JSON:", tiptapJson);
             editor.commands.setContent({ type: 'doc', content: [{ type: 'paragraph' }] }, false);
             notifications.show({
                 title: 'Content Load Error',
@@ -54,49 +55,76 @@ const CurriculumEditor = forwardRef<CurriculumEditorRef, CurriculumEditorProps>(
             });
         }
 
-        // Show a notification if editing a suggestion
         if (isSuggestion) {
           notifications.show({
-            id: `suggestion-notice-${courseId}`, // Unique ID to prevent multiple similar notifications
+            id: `suggestion-notice-${courseId}`,
             title: 'Editing Suggestion',
             message: `You are editing a suggestion for version ${initialCourseData.version || 'N/A'}. Changes will update this suggestion and require admin approval.`,
             color: 'orange',
             icon: <IconAlertTriangle size={18} />,
-            autoClose: 7000, // Give user some time to read
+            autoClose: 7000,
           });
         }
+      } else {
+        // console.log('[DEBUG CurriculumEditor] Skipping setContent. Conditions not met:', 
+        //   { hasInitialData: !!initialCourseData, editorExists: !!editor, editorIsNotDestroyed: editor && !editor.isDestroyed }
+        // );
       }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [initialCourseData, editor, isSuggestion]); // courseId added to deps for notification ID
+    }, [initialCourseData, editor, isSuggestion, courseId]);
 
 
     useImperativeHandle(ref, () => ({
       scrollToSection: (sectionId: string) => {
-        if (!editor || editor.isDestroyed || !editor.view || !editor.view.dom || !editor.view.dom.parentElement) {
-          console.warn("[CurriculumEditor] scrollToSection: Editor or scroll parent not ready.");
+        // console.log(`[DEBUG scrollToSection] Called with sectionId: ${sectionId}`);
+
+        if (!editor || editor.isDestroyed) {
+          // console.warn("[DEBUG scrollToSection] Editor not ready or destroyed.");
           return;
         }
-        const scrollableContainer = editor.view.dom.parentElement as HTMLElement;
+        if (!editor.view || !editor.view.dom) {
+          // console.warn("[DEBUG scrollToSection] Editor view or DOM not ready.");
+          return;
+        }
+
+        let scrollableContainer = editor.view.dom.closest('.mantine-RichTextEditor-content') as HTMLElement | null;
+
+        if (!scrollableContainer) {
+          // console.warn("[DEBUG scrollToSection] '.mantine-RichTextEditor-content' not found. Falling back.");
+          scrollableContainer = editor.view.dom.parentElement as HTMLElement | null;
+          if (!scrollableContainer) {
+            // console.warn("[DEBUG scrollToSection] Fallback scroll container also not found.");
+            return;
+          }
+        }
+        
+        // console.log(`[DEBUG scrollToSection] scrollableContainer.scrollHeight: ${scrollableContainer.scrollHeight}, scrollableContainer.clientHeight: ${scrollableContainer.clientHeight}, scrollableContainer.scrollTop: ${scrollableContainer.scrollTop}`);
+
 
         if (sectionId === COURSE_HEADER_SECTION_ID) {
           scrollableContainer.scrollTo({ top: 0, behavior: 'smooth' });
           return;
         }
 
-        const targetElement = editor.view.dom.querySelector(`[data-section-id="${CSS.escape(sectionId)}"]`) as HTMLElement | null;
+        const selector = `[data-section-id="${CSS.escape(sectionId)}"]`;
+        const targetElement = editor.view.dom.querySelector(selector) as HTMLElement | null;
         
-        if (targetElement) {
+        if (targetElement && scrollableContainer) {
           const scrollableContainerRect = scrollableContainer.getBoundingClientRect();
           const targetElementRect = targetElement.getBoundingClientRect();
-          const scrollTopOffset = targetElementRect.top - scrollableContainerRect.top;
-          const newScrollTop = scrollableContainer.scrollTop + scrollTopOffset;
+          const offsetTopInScroller = targetElementRect.top - scrollableContainerRect.top;
+          const newScrollTop = scrollableContainer.scrollTop + offsetTopInScroller;
+          const finalScrollTo = newScrollTop - 10;
+
           scrollableContainer.scrollTo({
-            top: newScrollTop - 10, 
+            top: finalScrollTo,
             behavior: 'smooth',
           });
         } else {
-          console.warn(`[CurriculumEditor] scrollToSection: Element with data-section-id="${sectionId}" not found. Scrolling to top.`);
-          scrollableContainer.scrollTo({ top: 0, behavior: 'smooth' });
+          // console.warn(`[DEBUG scrollToSection] Element with data-section-id="${sectionId}" not found. Scrolling to top.`);
+          if (scrollableContainer) {
+            scrollableContainer.scrollTo({ top: 0, behavior: 'smooth' });
+          }
         }
       },
     }));
@@ -133,7 +161,6 @@ const CurriculumEditor = forwardRef<CurriculumEditorRef, CurriculumEditorProps>(
       try {
         await onSaveRef.current(editorJson);
       } catch (err) {
-        // Error notification is handled by the caller (App.tsx)
         console.error('Submission failed in editor: ', err);
       }
     };
@@ -143,41 +170,41 @@ const CurriculumEditor = forwardRef<CurriculumEditorRef, CurriculumEditorProps>(
     }
 
     const saveButtonText = isApprovedCourse ? "Suggest Changes" : "Save Suggestion";
-    const saveButtonTooltip = isApprovedCourse 
+    const saveButtonTooltip = isApprovedCourse
         ? "Submit these edits as a new suggestion for this approved course."
         : "Save the changes to this current suggestion.";
 
-    const HEADER_HEIGHT_FOR_STICKY = 60; 
+    const HEADER_HEIGHT_FOR_STICKY = 60;
 
     return (
-      <Stack style={{ height: '100%', overflow: 'hidden' }} gap={0}>
-        {/* Alert component removed */}
+      <Stack style={{ height: '100%', overflow: 'hidden' }} gap={0}> {/* Added minHeight: 0 here if needed, but App.tsx change is more primary */}
         <RichTextEditor
           editor={editor}
-          style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
-          styles={(editorTheme: MantineTheme) => ({ 
+          // Added minHeight:0 here if needed, but App.tsx Box is more primary
+          style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }} 
+          styles={(editorTheme: MantineTheme) => ({
             root: {
                 display: 'flex',
                 flexDirection: 'column',
                 height: '100%',
+                // minHeight: 0, // Added here if needed, but App.tsx Box is more primary
             },
-            content: {
-              flexGrow: 1,
-              overflowY: 'auto',
-              padding: 0, 
-              '& > div[style*="overflow"]': { 
-                height: '100% !important',
-              },
+            content: { 
+              flexGrow: 1, 
+              flexShrink: 1, 
+              flexBasis: '0%', // Important for flex-grow to work correctly
+              overflowY: 'auto', 
+              padding: 0,
               '& .ProseMirror': { 
                 padding: editorTheme.spacing.md,
-                minHeight: '100%', 
+                // Ensure no height: 100% or min-height: 100% here
               },
             },
           })}
         >
-          <RichTextEditor.Toolbar 
-            sticky 
-            stickyOffset={HEADER_HEIGHT_FOR_STICKY} 
+          <RichTextEditor.Toolbar
+            sticky
+            stickyOffset={HEADER_HEIGHT_FOR_STICKY}
           >
             <RichTextEditor.ControlsGroup>
               <RichTextEditor.Bold /> <RichTextEditor.Italic /> <RichTextEditor.Underline /> <RichTextEditor.Strikethrough />
@@ -190,21 +217,21 @@ const CurriculumEditor = forwardRef<CurriculumEditorRef, CurriculumEditorProps>(
             </RichTextEditor.ControlsGroup>
             <RichTextEditor.ControlsGroup style={{ marginLeft: 'auto' }}>
               <Tooltip label="Copy content as Rich Text (for Google Docs, etc.)" withArrow>
-                <Button 
-                  variant="default" 
+                <Button
+                  variant="default"
                   onClick={internalHandleCopyAsRichText}
-                  disabled={!editor || editor.isEmpty} 
-                  size="xs" 
+                  disabled={!editor || editor.isEmpty}
+                  size="xs"
                   leftSection={<IconClipboardText size={16} />}
                 >
                   Copy Rich Text
                 </Button>
               </Tooltip>
               <Tooltip label={saveButtonTooltip} withArrow>
-                <Button 
+                <Button
                   onClick={internalHandleSubmitChanges}
                   disabled={!editor}
-                  size="xs" 
+                  size="xs"
                   leftSection={<IconDeviceFloppy size={16} />}
                 >
                   {saveButtonText}
@@ -212,9 +239,7 @@ const CurriculumEditor = forwardRef<CurriculumEditorRef, CurriculumEditorProps>(
               </Tooltip>
             </RichTextEditor.ControlsGroup>
           </RichTextEditor.Toolbar>
-          <RichTextEditor.Content 
-             style={{flexGrow: 1, overflowY: 'auto'}}
-          /> 
+          <RichTextEditor.Content />
         </RichTextEditor>
       </Stack>
     );

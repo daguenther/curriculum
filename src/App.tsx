@@ -62,7 +62,7 @@ import { EMPTY_ARRAY_JSON_STRING } from './utils/constants';
 import { calculateSectionCompletion } from './utils/completionUtils';
 import { notifications } from '@mantine/notifications';
 
-const ADMIN_EMAILS_APP = ['dguenther@legacyknights.org'];
+// const ADMIN_EMAILS_APP = ['dguenther@legacyknights.org']; // Commented out as not directly relevant to the issue
 
 // Reusable component for the content of the Navbar/Menu
 const CourseNavigationContent: React.FC<{
@@ -117,10 +117,10 @@ const CourseNavigationContent: React.FC<{
       )}
 
       {!currentUser && <Text c="dimmed" ta="center" mt="xl" p="xs">Please log in to see courses.</Text>}
-      
+
       {currentUser && isLoading && coursesMetadata.length === 0 && <Text c="dimmed" ta="center" mt="md" p="xs">Loading courses...</Text>}
       {currentUser && !isLoading && coursesMetadata.length === 0 && <Text c="dimmed" ta="center" mt="md" p="xs">No courses available, or create a new one.</Text>}
-      
+
       {currentUser && !isLoading && coursesMetadata.length > 0 && sortedSubjects.map((subject) => (
           <div key={subject} style={{ marginTop: '0.5rem' }}>
             {renderAs === 'navlink' ? (
@@ -137,7 +137,7 @@ const CourseNavigationContent: React.FC<{
                     p="xs"
                 >
                     {coursesBySubject[subject]
-                        .filter(course => course.isApproved) 
+                        .filter(course => course.isApproved)
                         .sort((a,b) => (a.title).localeCompare(b.title))
                         .map((course) => (
                             <NavLink
@@ -157,11 +157,11 @@ const CourseNavigationContent: React.FC<{
                 </NavLink>
             ) : ( // renderAs === 'menuitem'
                 <>
-                    <Box 
-                        p="xs" 
-                        style={{ 
-                            fontWeight: 600, 
-                            fontSize: theme.fontSizes.sm, 
+                    <Box
+                        p="xs"
+                        style={{
+                            fontWeight: 600,
+                            fontSize: theme.fontSizes.sm,
                             color: theme.colors.gray[7],
                             display: 'flex',
                             alignItems: 'center'
@@ -172,16 +172,16 @@ const CourseNavigationContent: React.FC<{
                     </Box>
                     <Stack gap={0} pl={`calc(${theme.spacing.sm} + 0.5rem)`}>
                       {coursesBySubject[subject]
-                          .filter(course => course.isApproved) 
+                          .filter(course => course.isApproved)
                           .sort((a,b) => (a.title).localeCompare(b.title))
                           .map((course) => (
-                        <Menu.Item 
+                        <Menu.Item
                           key={course.id}
                           leftSection={<IconFileText size="0.9rem" stroke={1.5} />}
                           onClick={() => handleLoad(course.id)}
                           disabled={isLoading}
-                          style={selectedCourseId === course.id ? 
-                                 { backgroundColor: theme.colors[theme.primaryColor][0], fontWeight: 500 } : 
+                          style={selectedCourseId === course.id ?
+                                 { backgroundColor: theme.colors[theme.primaryColor][0], fontWeight: 500 } :
                                  {}
                                 }
                         >
@@ -227,7 +227,7 @@ function App() {
       setAuthLoading(false);
       if (!user) {
         setCurrentCourse(null); setSelectedCourseId(null); setCoursesMetadata([]);
-        closeMobileNavbar(); 
+        closeMobileNavbar();
         closeDesktopMenu();
       }
     });
@@ -247,13 +247,23 @@ function App() {
   });
 
   useEffect(() => {
+    console.log(`[DEBUG App.tsx useEffect scrollToSection] Triggered. activeTab: ${activeTab}, currentCourse loaded: ${!!currentCourse}, editorKey: ${editorKey}`);
     if (currentCourse && activeTab && editorRef.current) {
+        console.log(`[DEBUG App.tsx useEffect scrollToSection] Conditions met. Setting timeout for scrollToSection for tab: ${activeTab}.`);
         const timeoutId = setTimeout(() => {
+            console.log(`[DEBUG App.tsx useEffect scrollToSection] Timeout fired. Calling editorRef.current.scrollToSection('${activeTab}')`);
             if (editorRef.current && typeof editorRef.current.scrollToSection === 'function') {
                 editorRef.current.scrollToSection(activeTab);
+            } else {
+                console.warn(`[DEBUG App.tsx useEffect scrollToSection] editorRef.current or scrollToSection not available in timeout. editorRef.current:`, editorRef.current);
             }
-        }, 100); // Increased delay for DOM rendering
-        return () => clearTimeout(timeoutId);
+        }, 250); // Increased delay slightly for DOM rendering, can be adjusted
+        return () => {
+            console.log(`[DEBUG App.tsx useEffect scrollToSection] Clearing timeout for tab: ${activeTab}`);
+            clearTimeout(timeoutId);
+        };
+    } else {
+        console.log(`[DEBUG App.tsx useEffect scrollToSection] Conditions NOT met. currentCourse: ${!!currentCourse}, activeTab: ${activeTab}, editorRef.current: ${!!editorRef.current}`);
     }
   }, [activeTab, currentCourse, editorKey]);
 
@@ -262,7 +272,7 @@ function App() {
     if (!currentUser) return;
     setIsLoading(true);
     try {
-      const metadata = await fetchAllCourseMetadata(currentUser.email, true); // Fetch only approved
+      const metadata = await fetchAllCourseMetadata(currentUser.email, true);
       setCoursesMetadata(metadata);
     } catch (err) {
       setError('Failed to load course list.');
@@ -278,34 +288,34 @@ function App() {
   }, [loadCourseMetadata, authLoading]);
 
   const handleLoadCourse = async (courseId: string | null) => {
+    console.log(`[DEBUG App.tsx handleLoadCourse] Loading course: ${courseId}`);
     if (!currentUser) {
         notifications.show({ title: 'Login Required', message: 'Please log in to load a course.', color: 'yellow' });
         return;
     }
     if (!courseId) {
       setCurrentCourse(null); setSelectedCourseId(null); setEditorKey(prev => prev + 1); setActiveTab(COURSE_HEADER_SECTION_ID);
+      console.log(`[DEBUG App.tsx handleLoadCourse] No courseId provided, resetting state. New editorKey: ${editorKey + 1}`);
       return;
     }
     setIsLoading(true); setError(null);
     try {
       const courseData = await fetchCourseById(courseId);
       if (courseData) {
-          // Since fetchAllCourseMetadata (with onlyApproved=true) populates the list,
-          // and it already filters by user authorization (for non-admins),
-          // we can assume if it's in the list, it's an approved course the user can see.
-          // The main check is whether fetchCourseById actually returns data.
           const validatedUnits = (courseData.units || []).filter(u => u && typeof u.id === 'string' && u.id.trim() !== '');
           setCurrentCourse({ ...courseData, units: validatedUnits });
           setSelectedCourseId(courseId);
           setEditorKey(prev => prev + 1);
           setActiveTab(COURSE_HEADER_SECTION_ID);
-          if (isMobile) closeMobileNavbar(); 
+          console.log(`[DEBUG App.tsx handleLoadCourse] Course ${courseId} loaded. New editorKey: ${editorKey + 1}, activeTab set to ${COURSE_HEADER_SECTION_ID}`);
+          if (isMobile) closeMobileNavbar();
           else closeDesktopMenu();
 
-      } else { // courseData is null, meaning full document not found for this ID
+      } else {
         setError(`Course with ID ${courseId} not found. The summary might exist, but the full course data is missing.`);
         notifications.show({ title: 'Error', message: `Course with ID ${courseId} not found.`, color: 'red' });
         setCurrentCourse(null); setSelectedCourseId(null); setActiveTab(COURSE_HEADER_SECTION_ID);
+        console.warn(`[DEBUG App.tsx handleLoadCourse] Course ${courseId} not found in DB.`);
       }
     } catch (err) {
       const errorMessage = (err instanceof Error) ? err.message : 'Unknown error';
@@ -317,7 +327,7 @@ function App() {
       setIsLoading(false);
     }
   };
-  
+
   const handleSubmitChanges = async (editorContent: JSONContent) => {
     if (!currentUser) {
       notifications.show({ title: 'Login Required', message: 'You must be logged in to submit changes.', color: 'red' });
@@ -332,22 +342,22 @@ function App() {
       const courseDataFromEditor = tiptapJsonToCourse(editorContent, currentCourse);
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { id, progress, isApproved, submittedAt, submittedBy, version, originalCourseId, ...contentToSubmit } = courseDataFromEditor;
-      const baseCourseIdForOperation = selectedCourseId; // This is the ID of the document being edited
+      const baseCourseIdForOperation = selectedCourseId;
 
       const wasApprovedBeforeSubmit = currentCourse.isApproved;
 
       const newId = await submitCourseChanges(
         baseCourseIdForOperation, contentToSubmit, currentUser.email || 'unknown@example.com'
       );
-      await loadCourseMetadata(); // Refresh course list
-      await handleLoadCourse(newId); // Load the newly created/updated course/suggestion
+      await loadCourseMetadata();
+      await handleLoadCourse(newId);
 
       const message = wasApprovedBeforeSubmit && baseCourseIdForOperation !== newId ?
-          'Your suggestion has been submitted!' : // Submitted a change to an approved course (new suggestion created)
+          'Your suggestion has been submitted!' :
           (baseCourseIdForOperation && baseCourseIdForOperation === newId && !wasApprovedBeforeSubmit ?
-              'Your suggestion has been updated!' : // Updated an existing suggestion
-              (!baseCourseIdForOperation ? 'New course created successfully!' : // Brand new course
-                'Course changes saved!' // Fallback, or direct edit to an initial (not-yet-approved) new course
+              'Your suggestion has been updated!' :
+              (!baseCourseIdForOperation ? 'New course created successfully!' :
+                'Course changes saved!'
               ));
       notifications.show({ title: 'Success!', message, color: 'teal', icon: <IconCheck size={18}/>, autoClose: 3000 });
     } catch (err) {
@@ -355,7 +365,6 @@ function App() {
       setError(`Failed to submit changes: ${errorMessage}`);
       notifications.show({ title: 'Submission Failed', message: `Failed to submit changes: ${errorMessage}`, color: 'red' });
       console.error(err);
-      // Do not nullify currentCourse here, user might want to retry or see the state.
     } finally {
       setIsLoading(false);
     }
@@ -377,11 +386,9 @@ function App() {
             instructionalStrategiesActivities: EMPTY_ARRAY_JSON_STRING, resources: EMPTY_ARRAY_JSON_STRING, assessments: EMPTY_ARRAY_JSON_STRING,
           },],
       };
-      // Pass null as currentCourseId to indicate a new course creation.
-      // submitCourseChanges will handle it as a new approved course.
       const generatedCourseId = await submitCourseChanges(null, newCourseContent, currentUser.email || 'unknown@example.com');
-      await loadCourseMetadata(); // Refresh the list
-      await handleLoadCourse(generatedCourseId); // Load the new course
+      await loadCourseMetadata();
+      await handleLoadCourse(generatedCourseId);
       notifications.show({ title: 'Success!', message: 'New course created successfully!', color: 'teal', icon: <IconCheck size={18}/>, autoClose: 3000});
     } catch (err) {
         const msg = `Failed to create new course: ${(err as Error).message}`;
@@ -393,9 +400,6 @@ function App() {
 
   const handleAddUnit = () => {
     if (!currentCourse || !currentUser) return;
-    // Prevent adding units if editing a suggestion that points to an original course.
-    // Allow adding units if it's a new course (isApproved=true, originalCourseId=null)
-    // or if it's an existing suggestion that was itself a new course (isApproved=false, originalCourseId=null).
     if (!currentCourse.isApproved && currentCourse.originalCourseId) {
         notifications.show({ title: 'Action Denied', message: 'Adding units is disabled for suggestions based on an existing approved course. Edit the main course or create a new one.', color: 'orange'}); return;
     }
@@ -406,8 +410,9 @@ function App() {
       instructionalStrategiesActivities: EMPTY_ARRAY_JSON_STRING, resources: EMPTY_ARRAY_JSON_STRING, assessments: EMPTY_ARRAY_JSON_STRING,
     };
     setCurrentCourse(prev => prev ? { ...prev, units: [...(prev.units || []), newUnit] } : null);
-    setEditorKey(prev => prev + 1); // Force re-render of editor with new unit structure
-    setActiveTab(newUnitId); // Switch to the new unit tab
+    setEditorKey(prev => prev + 1);
+    setActiveTab(newUnitId);
+    console.log(`[DEBUG App.tsx handleAddUnit] Added unit ${newUnitId}. New editorKey: ${editorKey + 1}, activeTab: ${newUnitId}`);
   };
 
   const promptRemoveUnit = (unit: Unit) => {
@@ -419,20 +424,25 @@ function App() {
 
   const confirmRemoveUnit = () => {
     if (!currentCourse || !unitToDelete || !currentUser) return;
-    setCurrentCourse(prev => prev ? { ...prev, units: (prev.units || []).filter(u => u.id !== unitToDelete.id) } : null);
+    const newUnits = (currentCourse.units || []).filter(u => u.id !== unitToDelete.id);
+    setCurrentCourse(prev => prev ? { ...prev, units: newUnits } : null);
     setEditorKey(prev => prev + 1);
-    if (activeTab === unitToDelete.id) setActiveTab(COURSE_HEADER_SECTION_ID); // Switch to overall if deleted tab was active
+    console.log(`[DEBUG App.tsx confirmRemoveUnit] Removed unit ${unitToDelete.id}. New editorKey: ${editorKey + 1}`);
+    if (activeTab === unitToDelete.id) {
+      setActiveTab(COURSE_HEADER_SECTION_ID);
+      console.log(`[DEBUG App.tsx confirmRemoveUnit] Active tab was deleted unit, setting activeTab to ${COURSE_HEADER_SECTION_ID}`);
+    }
     closeDeleteUnitModal(); setUnitToDelete(null);
   };
 
-  // Effect to reset activeTab if it becomes invalid (e.g. unit deleted)
   useEffect(() => {
     if (currentCourse && activeTab !== COURSE_HEADER_SECTION_ID) {
       if (!(currentCourse.units || []).some(unit => unit.id === activeTab)) {
+        console.log(`[DEBUG App.tsx useEffect activeTabCheck] Active tab ${activeTab} no longer valid, resetting to ${COURSE_HEADER_SECTION_ID}`);
         setActiveTab(COURSE_HEADER_SECTION_ID);
       }
     } else if (!currentCourse && activeTab !== COURSE_HEADER_SECTION_ID) {
-      // If no course is loaded, default to overall (though tabs won't be visible)
+      console.log(`[DEBUG App.tsx useEffect activeTabCheck] No current course, resetting activeTab ${activeTab} to ${COURSE_HEADER_SECTION_ID}`);
       setActiveTab(COURSE_HEADER_SECTION_ID);
     }
   }, [currentCourse, activeTab]);
@@ -452,29 +462,29 @@ function App() {
     <>
       <AppShell
         header={{ height: HEADER_HEIGHT }}
-        navbar={{ 
-            width: 300, breakpoint: 'sm', 
-            collapsed: { desktop: true, mobile: !mobileOpened } 
+        navbar={{
+            width: 300, breakpoint: 'sm',
+            collapsed: { desktop: true, mobile: !mobileOpened }
         }}
-        padding={0} // Global padding for AppShell
+        padding={0}
       >
         <AppShell.Header>
           <Group h="100%" px="md" justify="space-between" wrap="nowrap">
             <Group gap="xs" align="center">
               <Burger opened={mobileOpened} onClick={toggleMobile} hiddenFrom="sm" size="sm" />
               <Box visibleFrom="sm">
-                <Menu 
-                    opened={desktopMenuOpened} 
+                <Menu
+                    opened={desktopMenuOpened}
                     onChange={toggleDesktopMenu}
                     shadow="md" width={300} trigger="click"
-                    position="bottom-start" 
+                    position="bottom-start"
                     closeOnClickOutside={true}
                 >
                   <Menu.Target>
-                    <Button 
-                        variant="subtle" 
-                        size="sm" 
-                        leftSection={<IconLayoutSidebarLeftExpand size="1.2rem" />} 
+                    <Button
+                        variant="subtle"
+                        size="sm"
+                        leftSection={<IconLayoutSidebarLeftExpand size="1.2rem" />}
                         px="xs"
                     >
                       Courses
@@ -517,19 +527,19 @@ function App() {
             </Group>
           </Group>
         </AppShell.Header>
-        
-        <AppShell.Navbar p={0}> 
+
+        <AppShell.Navbar p={0}>
              <ScrollArea style={{ height: '100%' }}>
                 <CourseNavigationContent {...courseNavSharedProps} renderAs="navlink" closeMenu={closeMobileNavbar} />
             </ScrollArea>
         </AppShell.Navbar>
 
-        <AppShell.Main style={{ height: `calc(100vh - ${HEADER_HEIGHT}px)`, overflow: 'hidden', padding: 0 }}> {/* Ensure no padding for AppShell.Main */}
+        <AppShell.Main style={{ height: `calc(100vh - ${HEADER_HEIGHT}px)`, overflow: 'hidden', padding: 0 }}>
           <LoadingOverlay visible={isLoading && !authLoading} overlayProps={{ radius: 'sm', blur: 2 }} />
           {error && ( <Alert icon={<IconAlertCircle size="1rem" />} title="Error" color="red" withCloseButton onClose={() => setError(null)} m="md">{error}</Alert> )}
-          
+
           {!currentUser && !authLoading && ( <Paper p="xl" withBorder style={{ textAlign: 'center', margin: 'auto', maxWidth: '400px', marginTop: '10vh' }}> <IconLogin size={48} stroke={1.5} style={{ marginBottom: '1rem', color: theme.colors.gray[6] }} /> <Title order={4}>Please Log In</Title> <Text c="dimmed">Log in with your Google account to access the Curriculum Mapper.</Text> <Button onClick={signInWithGoogle} mt="md" size="md">Login with Google</Button> </Paper> )}
-          
+
           {currentUser && !currentCourse && !isLoading && (
             <Paper p="xl" withBorder style={{ textAlign: 'center', margin: 'auto', maxWidth: '400px', marginTop: '10vh' }}>
                 <IconFolderOpen size={48} stroke={1.5} style={{ marginBottom: '1rem', color: theme.colors.gray[6] }} />
@@ -540,20 +550,34 @@ function App() {
 
           {currentUser && currentCourse && selectedCourseId && (
             <Flex style={{ height: '100%', width: '100%' }}>
-              <Box w={VERTICAL_TABS_WIDTH} style={{ borderRight: `1px solid ${theme.colors.gray[3]}`, display: 'flex', flexDirection: 'column', height: '100%', overflowY: 'hidden' }}>
+              <Box w={VERTICAL_TABS_WIDTH} style={
+                {
+                  borderRight: `1px solid ${theme.colors.gray[3]}`,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  height: '100%',
+                  overflowY: 'hidden'
+                }
+              }>
                 <ScrollArea style={{ flexGrow: 1 }} type="auto" p="md">
-                  <Tabs value={activeTab} onChange={(value) => { if (value) setActiveTab(value); }} orientation="vertical" variant="pills"
+                  <Tabs value={activeTab} onChange={(value) => {
+                      if (value) {
+                          console.log(`[DEBUG App.tsx Tabs onChange] Tab changed to: ${value}`);
+                          setActiveTab(value);
+                      }
+                    }}
+                    orientation="vertical" variant="pills"
                     styles={{
                         list: { borderRight: 0 },
                         tab: { width: '100%', justifyContent: 'flex-start', padding: `${theme.spacing.xs} ${theme.spacing.sm}`, marginBottom: theme.spacing.xs },
-                        tabLabel: { width: 'calc(100% - 50px)' }, // Adjust if badge/icon width changes
+                        tabLabel: { width: 'calc(100% - 50px)' },
                         tabRightSection: { marginLeft: 'auto' }
                     }}>
                     <Tabs.List>
                       <Tabs.Tab value={COURSE_HEADER_SECTION_ID}
                         rightSection={ <CompletionBadge data={currentCourse} sectionType="overall" /> }
                         style={activeTab === COURSE_HEADER_SECTION_ID ? { backgroundColor: theme.colors[theme.primaryColor][6], color: theme.white } : { backgroundColor: theme.colors.gray[1], color: theme.colors.gray[8] } }>
-                        <Text size="xs" truncate>Overall</Text> 
+                        <Text size="xs" truncate>Overall</Text>
                       </Tabs.Tab>
                       <Divider my="xs" />
                       {(currentCourse.units || []).map((unit) => {
@@ -564,21 +588,21 @@ function App() {
                         return (
                           <Tabs.Tab key={unit.id} value={unit.id}
                             style={ activeTab === unit.id ? { backgroundColor: theme.colors[tabColorName][6], color: theme.white } : { backgroundColor: theme.colors[tabColorName][1], color: theme.colors[tabColorName][8] } }
-                            rightSection={ 
-                                <Group gap={3} wrap="nowrap" style={{ display: 'flex', alignItems: 'center' }}> 
-                                    <CompletionBadge data={unit} sectionType="unit" /> 
-                                    <ActionIcon 
-                                        component="div" // Important for stopping event propagation on click if needed
-                                        size="xs" 
-                                        variant="transparent" 
-                                        color={activeTab === unit.id ? theme.white : theme.colors.red[6]} 
-                                        onClick={(e) => { e.stopPropagation(); e.preventDefault(); promptRemoveUnit(unit); }} 
-                                        title={`Remove ${unit.unitName || 'Unit'}`} 
+                            rightSection={
+                                <Group gap={3} wrap="nowrap" style={{ display: 'flex', alignItems: 'center' }}>
+                                    <CompletionBadge data={unit} sectionType="unit" />
+                                    <ActionIcon
+                                        component="div"
+                                        size="xs"
+                                        variant="transparent"
+                                        color={activeTab === unit.id ? theme.white : theme.colors.red[6]}
+                                        onClick={(e) => { e.stopPropagation(); e.preventDefault(); promptRemoveUnit(unit); }}
+                                        title={`Remove ${unit.unitName || 'Unit'}`}
                                         style={{ height: '16px', width: '16px', marginLeft: theme.spacing.xs }}
-                                    > 
-                                        <IconX size={12} stroke={1.5} /> 
-                                    </ActionIcon> 
-                                </Group> 
+                                    >
+                                        <IconX size={12} stroke={1.5} />
+                                    </ActionIcon>
+                                </Group>
                             }>
                             <Text size="xs" truncate>{unit.unitName || 'Untitled Unit'}</Text>
                           </Tabs.Tab>
@@ -594,7 +618,15 @@ function App() {
                 </Box>
               </Box>
 
-              <Box style={{ flexGrow: 1, height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+              <Box style={{
+                  flexGrow: 1,
+                  height: '100%',
+                  overflow: 'hidden',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  minHeight: 0 // <<< THE CRITICAL FIX
+                }}
+              >
                 <CurriculumEditor ref={editorRef} key={editorKey} initialCourseData={currentCourse} onSave={handleSubmitChanges} courseId={selectedCourseId} isApprovedCourse={currentCourse.isApproved} isSuggestion={!currentCourse.isApproved && !!currentCourse.originalCourseId} />
               </Box>
             </Flex>
