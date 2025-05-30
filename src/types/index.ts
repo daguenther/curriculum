@@ -1,7 +1,8 @@
 // src/types/index.ts
+import type { Timestamp } from "firebase/firestore";
 
 export interface Unit {
-  id: string; // Essential for tabs and keys
+  id: string;
   unitName: string;
   timeAllotted?: string;
   learningObjectives: string; // JSONContent string
@@ -10,19 +11,30 @@ export interface Unit {
   instructionalStrategiesActivities: string; // JSONContent string
   resources: string; // JSONContent string
   assessments: string; // JSONContent string
-  // any other unit-specific fields
 }
 
 export interface Course {
   id: string;
   title: string;
-  // name: string; // e.g. "BIBLE101" - Removed as per request
-  description: string; // JSONContent string
-  biblicalBasis: string; // JSONContent string
-  materials: string; // JSONContent string
-  pacing: string; // JSONContent string
+  description: string;
+  biblicalBasis: string;
+  materials: string;
+  pacing: string;
   units: Unit[];
-  department: string; // This will be treated as "Subject"
-  progress: number; // Overall progress percentage, to be calculated correctly
-  // any other course-level fields
+  department: string; // Subject
+  progress: number;
+  isApproved: boolean;
+  submittedBy?: string;
+  submittedAt?: Timestamp | Date;
+  version?: number;
+  originalCourseId?: string | null;
+}
+
+// New Interface for Teacher Data
+export interface TeacherData {
+  email: string;
+  firstName: string;
+  lastName: string;
+  courses: string[]; // Array of course titles they are authorized for
+  assignedTemplateIds: string[];
 }

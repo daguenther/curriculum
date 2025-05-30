@@ -5,10 +5,9 @@ import './index.css';
 import App from './App.tsx';
 import { MantineProvider, createTheme } from '@mantine/core';
 import '@mantine/core/styles.css';
-import { Notifications } from '@mantine/notifications'; // Import Notifications
-import '@mantine/notifications/styles.css'; // Import Notifications styles
+import { Notifications } from '@mantine/notifications';
+import '@mantine/notifications/styles.css';
 
-// Optional: Define a custom theme or use the default
 const theme = createTheme({
   // Your theme overrides
 });
@@ -16,7 +15,7 @@ const theme = createTheme({
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <MantineProvider theme={theme}>
-      <Notifications position="top-right" /> {/* Add Notifications provider */}
+      <Notifications position="top-right" zIndex={2000} /> {/* Ensure high zIndex */}
       <App />
     </MantineProvider>
   </StrictMode>,
