@@ -127,7 +127,8 @@ const CourseNavigationContent: React.FC<{
                 <NavLink
                     label={subject}
                     leftSection={<IconBook size="1.1rem" stroke={1.5} />}
-                    opened
+                    opened // Keep sections open by default
+                    defaultOpened // Ensure it's open on initial render
                     styles={{
                         root: { paddingLeft: theme.spacing.xs, paddingRight: theme.spacing.xs, marginBottom: `calc(${theme.spacing.xs} / 2)` },
                         label: { fontWeight: 600, fontSize: theme.fontSizes.sm, color: theme.colors.gray[7] },
@@ -251,7 +252,7 @@ function App() {
             if (editorRef.current && typeof editorRef.current.scrollToSection === 'function') {
                 editorRef.current.scrollToSection(activeTab);
             }
-        }, 0);
+        }, 100); // Increased delay for DOM rendering
         return () => clearTimeout(timeoutId);
     }
   }, [activeTab, currentCourse, editorKey]);
@@ -261,7 +262,7 @@ function App() {
     if (!currentUser) return;
     setIsLoading(true);
     try {
-      const metadata = await fetchAllCourseMetadata(currentUser.email, true);
+      const metadata = await fetchAllCourseMetadata(currentUser.email, true); // Fetch only approved
       setCoursesMetadata(metadata);
     } catch (err) {
       setError('Failed to load course list.');
@@ -289,24 +290,20 @@ function App() {
     try {
       const courseData = await fetchCourseById(courseId);
       if (courseData) {
-        const isUserAdmin = currentUser.email && ADMIN_EMAILS_APP.includes(currentUser.email);
-        const isAuthorizedDirectly = coursesMetadata.some(meta => meta.id === courseId && meta.isApproved);
+          // Since fetchAllCourseMetadata (with onlyApproved=true) populates the list,
+          // and it already filters by user authorization (for non-admins),
+          // we can assume if it's in the list, it's an approved course the user can see.
+          // The main check is whether fetchCourseById actually returns data.
+          const validatedUnits = (courseData.units || []).filter(u => u && typeof u.id === 'string' && u.id.trim() !== '');
+          setCurrentCourse({ ...courseData, units: validatedUnits });
+          setSelectedCourseId(courseId);
+          setEditorKey(prev => prev + 1);
+          setActiveTab(COURSE_HEADER_SECTION_ID);
+          if (isMobile) closeMobileNavbar(); 
+          else closeDesktopMenu();
 
-        if (isUserAdmin || isAuthorizedDirectly) {
-            const validatedUnits = (courseData.units || []).filter(u => u && typeof u.id === 'string' && u.id.trim() !== '');
-            setCurrentCourse({ ...courseData, units: validatedUnits });
-            setSelectedCourseId(courseId);
-            setEditorKey(prev => prev + 1);
-            setActiveTab(COURSE_HEADER_SECTION_ID);
-            if (isMobile) closeMobileNavbar(); 
-            else closeDesktopMenu();
-        } else {
-            setError(`You are not authorized to view this course (${courseId}) or it's not an approved version.`);
-            notifications.show({ title: 'Access Denied', message: `You are not authorized to view this course or it's not an approved version.`, color: 'red' });
-            setCurrentCourse(null); setSelectedCourseId(null);
-        }
-      } else {
-        setError(`Course with ID ${courseId} not found.`);
+      } else { // courseData is null, meaning full document not found for this ID
+        setError(`Course with ID ${courseId} not found. The summary might exist, but the full course data is missing.`);
         notifications.show({ title: 'Error', message: `Course with ID ${courseId} not found.`, color: 'red' });
         setCurrentCourse(null); setSelectedCourseId(null); setActiveTab(COURSE_HEADER_SECTION_ID);
       }
@@ -333,29 +330,32 @@ function App() {
     setIsLoading(true); setError(null);
     try {
       const courseDataFromEditor = tiptapJsonToCourse(editorContent, currentCourse);
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { id, progress, isApproved, submittedAt, submittedBy, version, originalCourseId, ...contentToSubmit } = courseDataFromEditor;
-      const baseCourseIdForOperation = selectedCourseId;
+      const baseCourseIdForOperation = selectedCourseId; // This is the ID of the document being edited
 
-      let wasApprovedBeforeSubmit = currentCourse.isApproved;
+      const wasApprovedBeforeSubmit = currentCourse.isApproved;
 
       const newId = await submitCourseChanges(
         baseCourseIdForOperation, contentToSubmit, currentUser.email || 'unknown@example.com'
       );
-      await loadCourseMetadata();
-      await handleLoadCourse(newId);
+      await loadCourseMetadata(); // Refresh course list
+      await handleLoadCourse(newId); // Load the newly created/updated course/suggestion
 
       const message = wasApprovedBeforeSubmit && baseCourseIdForOperation !== newId ?
-          'Your suggestion has been submitted!' :
+          'Your suggestion has been submitted!' : // Submitted a change to an approved course (new suggestion created)
           (baseCourseIdForOperation && baseCourseIdForOperation === newId && !wasApprovedBeforeSubmit ?
-              'Your suggestion has been updated!' :
-              (!baseCourseIdForOperation ? 'New course created successfully!' : 'Course changes saved!')
-            );
+              'Your suggestion has been updated!' : // Updated an existing suggestion
+              (!baseCourseIdForOperation ? 'New course created successfully!' : // Brand new course
+                'Course changes saved!' // Fallback, or direct edit to an initial (not-yet-approved) new course
+              ));
       notifications.show({ title: 'Success!', message, color: 'teal', icon: <IconCheck size={18}/>, autoClose: 3000 });
     } catch (err) {
       const errorMessage = (err instanceof Error) ? err.message : 'Unknown error during submission.';
       setError(`Failed to submit changes: ${errorMessage}`);
       notifications.show({ title: 'Submission Failed', message: `Failed to submit changes: ${errorMessage}`, color: 'red' });
       console.error(err);
+      // Do not nullify currentCourse here, user might want to retry or see the state.
     } finally {
       setIsLoading(false);
     }
@@ -377,9 +377,11 @@ function App() {
             instructionalStrategiesActivities: EMPTY_ARRAY_JSON_STRING, resources: EMPTY_ARRAY_JSON_STRING, assessments: EMPTY_ARRAY_JSON_STRING,
           },],
       };
+      // Pass null as currentCourseId to indicate a new course creation.
+      // submitCourseChanges will handle it as a new approved course.
       const generatedCourseId = await submitCourseChanges(null, newCourseContent, currentUser.email || 'unknown@example.com');
-      await loadCourseMetadata();
-      await handleLoadCourse(generatedCourseId); 
+      await loadCourseMetadata(); // Refresh the list
+      await handleLoadCourse(generatedCourseId); // Load the new course
       notifications.show({ title: 'Success!', message: 'New course created successfully!', color: 'teal', icon: <IconCheck size={18}/>, autoClose: 3000});
     } catch (err) {
         const msg = `Failed to create new course: ${(err as Error).message}`;
@@ -391,8 +393,11 @@ function App() {
 
   const handleAddUnit = () => {
     if (!currentCourse || !currentUser) return;
+    // Prevent adding units if editing a suggestion that points to an original course.
+    // Allow adding units if it's a new course (isApproved=true, originalCourseId=null)
+    // or if it's an existing suggestion that was itself a new course (isApproved=false, originalCourseId=null).
     if (!currentCourse.isApproved && currentCourse.originalCourseId) {
-        notifications.show({ title: 'Action Denied', message: 'Cannot add units to a pending suggestion.', color: 'orange'}); return;
+        notifications.show({ title: 'Action Denied', message: 'Adding units is disabled for suggestions based on an existing approved course. Edit the main course or create a new one.', color: 'orange'}); return;
     }
     const newUnitId = `unit_${crypto.randomUUID()}`;
     const newUnit: Unit = {
@@ -401,12 +406,13 @@ function App() {
       instructionalStrategiesActivities: EMPTY_ARRAY_JSON_STRING, resources: EMPTY_ARRAY_JSON_STRING, assessments: EMPTY_ARRAY_JSON_STRING,
     };
     setCurrentCourse(prev => prev ? { ...prev, units: [...(prev.units || []), newUnit] } : null);
-    setEditorKey(prev => prev + 1); setActiveTab(newUnitId);
+    setEditorKey(prev => prev + 1); // Force re-render of editor with new unit structure
+    setActiveTab(newUnitId); // Switch to the new unit tab
   };
 
   const promptRemoveUnit = (unit: Unit) => {
     if (!currentCourse?.isApproved && currentCourse?.originalCourseId) {
-         notifications.show({ title: 'Action Denied', message: 'Cannot remove units from a pending suggestion.', color: 'orange'}); return;
+         notifications.show({ title: 'Action Denied', message: 'Removing units is disabled for suggestions based on an existing approved course.', color: 'orange'}); return;
     }
     setUnitToDelete(unit); openDeleteUnitModal();
   };
@@ -415,14 +421,18 @@ function App() {
     if (!currentCourse || !unitToDelete || !currentUser) return;
     setCurrentCourse(prev => prev ? { ...prev, units: (prev.units || []).filter(u => u.id !== unitToDelete.id) } : null);
     setEditorKey(prev => prev + 1);
-    if (activeTab === unitToDelete.id) setActiveTab(COURSE_HEADER_SECTION_ID);
+    if (activeTab === unitToDelete.id) setActiveTab(COURSE_HEADER_SECTION_ID); // Switch to overall if deleted tab was active
     closeDeleteUnitModal(); setUnitToDelete(null);
   };
 
+  // Effect to reset activeTab if it becomes invalid (e.g. unit deleted)
   useEffect(() => {
     if (currentCourse && activeTab !== COURSE_HEADER_SECTION_ID) {
-      if (!(currentCourse.units || []).some(unit => unit.id === activeTab)) setActiveTab(COURSE_HEADER_SECTION_ID);
+      if (!(currentCourse.units || []).some(unit => unit.id === activeTab)) {
+        setActiveTab(COURSE_HEADER_SECTION_ID);
+      }
     } else if (!currentCourse && activeTab !== COURSE_HEADER_SECTION_ID) {
+      // If no course is loaded, default to overall (though tabs won't be visible)
       setActiveTab(COURSE_HEADER_SECTION_ID);
     }
   }, [currentCourse, activeTab]);
@@ -446,7 +456,7 @@ function App() {
             width: 300, breakpoint: 'sm', 
             collapsed: { desktop: true, mobile: !mobileOpened } 
         }}
-        padding={0}
+        padding={0} // Global padding for AppShell
       >
         <AppShell.Header>
           <Group h="100%" px="md" justify="space-between" wrap="nowrap">
@@ -514,14 +524,14 @@ function App() {
             </ScrollArea>
         </AppShell.Navbar>
 
-        <AppShell.Main style={{ height: `calc(100vh - ${HEADER_HEIGHT}px)`, overflow: 'hidden' }}>
+        <AppShell.Main style={{ height: `calc(100vh - ${HEADER_HEIGHT}px)`, overflow: 'hidden', padding: 0 }}> {/* Ensure no padding for AppShell.Main */}
           <LoadingOverlay visible={isLoading && !authLoading} overlayProps={{ radius: 'sm', blur: 2 }} />
           {error && ( <Alert icon={<IconAlertCircle size="1rem" />} title="Error" color="red" withCloseButton onClose={() => setError(null)} m="md">{error}</Alert> )}
           
-          {!currentUser && !authLoading && ( <Paper p="xl" withBorder style={{ textAlign: 'center', margin: 'auto' }}> <IconLogin size={48} stroke={1.5} style={{ marginBottom: '1rem', color: theme.colors.gray[6] }} /> <Title order={4}>Please Log In</Title> <Text c="dimmed">Log in with your Google account to access the Curriculum Mapper.</Text> <Button onClick={signInWithGoogle} mt="md" size="md">Login with Google</Button> </Paper> )}
+          {!currentUser && !authLoading && ( <Paper p="xl" withBorder style={{ textAlign: 'center', margin: 'auto', maxWidth: '400px', marginTop: '10vh' }}> <IconLogin size={48} stroke={1.5} style={{ marginBottom: '1rem', color: theme.colors.gray[6] }} /> <Title order={4}>Please Log In</Title> <Text c="dimmed">Log in with your Google account to access the Curriculum Mapper.</Text> <Button onClick={signInWithGoogle} mt="md" size="md">Login with Google</Button> </Paper> )}
           
           {currentUser && !currentCourse && !isLoading && (
-            <Paper p="xl" withBorder style={{ textAlign: 'center', margin: 'auto' }}>
+            <Paper p="xl" withBorder style={{ textAlign: 'center', margin: 'auto', maxWidth: '400px', marginTop: '10vh' }}>
                 <IconFolderOpen size={48} stroke={1.5} style={{ marginBottom: '1rem', color: theme.colors.gray[6] }} />
                 <Title order={4}>{coursesMetadata.length === 0 ? "No Courses Found" : "Select a Course"}</Title>
                 <Text c="dimmed">{coursesMetadata.length === 0 ? "Create a new course to get started or check your permissions." : "Please select an approved course from the menu."}</Text>
@@ -536,7 +546,7 @@ function App() {
                     styles={{
                         list: { borderRight: 0 },
                         tab: { width: '100%', justifyContent: 'flex-start', padding: `${theme.spacing.xs} ${theme.spacing.sm}`, marginBottom: theme.spacing.xs },
-                        tabLabel: { width: 'calc(100% - 50px)' },
+                        tabLabel: { width: 'calc(100% - 50px)' }, // Adjust if badge/icon width changes
                         tabRightSection: { marginLeft: 'auto' }
                     }}>
                     <Tabs.List>
@@ -554,7 +564,22 @@ function App() {
                         return (
                           <Tabs.Tab key={unit.id} value={unit.id}
                             style={ activeTab === unit.id ? { backgroundColor: theme.colors[tabColorName][6], color: theme.white } : { backgroundColor: theme.colors[tabColorName][1], color: theme.colors[tabColorName][8] } }
-                            rightSection={ <Group gap={3} wrap="nowrap" style={{ display: 'flex', alignItems: 'center' }}> <CompletionBadge data={unit} sectionType="unit" /> <ActionIcon component="div" size="xs" variant="transparent" color={activeTab === unit.id ? theme.white : theme.colors.red[6]} onClick={(e) => { e.stopPropagation(); promptRemoveUnit(unit); }} title={`Remove ${unit.unitName || 'Unit'}`} style={{ height: '16px', width: '16px' }}> <IconX size={12} stroke={1.5} /> </ActionIcon> </Group> }>
+                            rightSection={ 
+                                <Group gap={3} wrap="nowrap" style={{ display: 'flex', alignItems: 'center' }}> 
+                                    <CompletionBadge data={unit} sectionType="unit" /> 
+                                    <ActionIcon 
+                                        component="div" // Important for stopping event propagation on click if needed
+                                        size="xs" 
+                                        variant="transparent" 
+                                        color={activeTab === unit.id ? theme.white : theme.colors.red[6]} 
+                                        onClick={(e) => { e.stopPropagation(); e.preventDefault(); promptRemoveUnit(unit); }} 
+                                        title={`Remove ${unit.unitName || 'Unit'}`} 
+                                        style={{ height: '16px', width: '16px', marginLeft: theme.spacing.xs }}
+                                    > 
+                                        <IconX size={12} stroke={1.5} /> 
+                                    </ActionIcon> 
+                                </Group> 
+                            }>
                             <Text size="xs" truncate>{unit.unitName || 'Untitled Unit'}</Text>
                           </Tabs.Tab>
                         );
@@ -565,7 +590,7 @@ function App() {
                 <Box p="md" pt={0}>
                     <Button onClick={handleAddUnit} leftSection={<IconPlus size={14} />} variant="light" fullWidth mt="sm"
                       disabled={!currentUser || (!currentCourse?.isApproved && !!currentCourse?.originalCourseId)}
-                      title={!currentCourse?.isApproved && !!currentCourse?.originalCourseId ? "Cannot add units to a suggestion." : "Add Unit"}> Add Unit </Button>
+                      title={!currentCourse?.isApproved && !!currentCourse?.originalCourseId ? "Cannot add units to a suggestion based on an existing course." : "Add Unit"}> Add Unit </Button>
                 </Box>
               </Box>
 

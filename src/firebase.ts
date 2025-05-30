@@ -14,12 +14,12 @@ import {
   getDoc,
   setDoc,
   collection,
-  getDocs,
-  query,
   addDoc,
   serverTimestamp,
-  where,
   Timestamp,
+  deleteField,
+  updateDoc,
+  deleteDoc,
 } from "firebase/firestore";
 import type { Course, TeacherData } from './types';
 import { isRichTextEmpty } from './utils/completionUtils';
@@ -41,10 +41,10 @@ const auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();
 
 const CURRICULUM_COLLECTION_NAME = 'curriculum';
-const COURSE_SUMMARIES_COLLECTION_NAME = 'course_summaries';
+const CURRICULUM_SUMMARIES_DOC_ID = 'curriculumSummaries';
 const TEACHERS_COLLECTION_NAME = 'teachers';
 
-const ADMIN_EMAILS = ['dguenther@legacyknights.org']; // Define admin emails here
+const ADMIN_EMAILS = ['dguenther@legacyknights.org'];
 
 // --- Authentication ---
 export const signInWithGoogle = async (): Promise<FirebaseUser | null> => {
@@ -90,6 +90,10 @@ export const fetchTeacherAuthorizedCourseTitles = async (teacherEmail: string): 
 // --- Course Data ---
 export const fetchCourseById = async (courseId: string): Promise<Course | null> => {
   try {
+    if (courseId === CURRICULUM_SUMMARIES_DOC_ID) {
+        console.warn(`Attempted to fetch summary document as a course: ${courseId}`);
+        return null;
+    }
     const courseRef = doc(db, CURRICULUM_COLLECTION_NAME, courseId);
     const courseSnap = await getDoc(courseRef);
     if (courseSnap.exists()) {
@@ -133,70 +137,85 @@ export const submitCourseChanges = async (
   currentUserEmail: string
 ): Promise<string> => {
   const progress = calculateOverallProgress(courseContent);
-  const submittedAtTimestamp = serverTimestamp();
+  const timestampForSubmission = serverTimestamp();
+  const summariesDocRef = doc(db, CURRICULUM_COLLECTION_NAME, CURRICULUM_SUMMARIES_DOC_ID);
 
   try {
-    let newCourseIdToReturn: string;
-    let summaryData: any; // To hold data for course_summaries
+    let courseDocIdToReturn: string;
+    let summaryEntryData: any;
+    let shouldWriteToSummary = false; // Flag to control summary write
 
-    if (currentCourseId === null) {
+    if (currentCourseId === null) { // Creating a new course document
       const newCourseData: Omit<Course, 'id'> = {
         ...courseContent,
         progress,
-        isApproved: true,
+        isApproved: true, // New courses are initially approved
         submittedBy: currentUserEmail,
-        submittedAt: submittedAtTimestamp as Timestamp,
+        submittedAt: timestampForSubmission as Timestamp,
         version: 1,
         originalCourseId: null,
       };
       const courseCollectionRef = collection(db, CURRICULUM_COLLECTION_NAME);
       const docRef = await addDoc(courseCollectionRef, newCourseData);
-      newCourseIdToReturn = docRef.id;
-      console.log("New approved course created with ID:", newCourseIdToReturn);
+      courseDocIdToReturn = docRef.id;
+      console.log("New approved course created with ID:", courseDocIdToReturn);
 
-      summaryData = {
+      summaryEntryData = {
         title: newCourseData.title, department: newCourseData.department, progress: newCourseData.progress,
-        isApproved: true, originalCourseId: null, version: 1,
-        submittedAt: newCourseData.submittedAt, submittedBy: newCourseData.submittedBy,
+        isApproved: newCourseData.isApproved, originalCourseId: newCourseData.originalCourseId, version: newCourseData.version,
+        submittedAt: timestampForSubmission,
+        submittedBy: newCourseData.submittedBy,
       };
+      shouldWriteToSummary = true; // New approved courses get a summary
 
-    } else {
-      const existingCourseDoc = await getDoc(doc(db, CURRICULUM_COLLECTION_NAME, currentCourseId));
-      if (!existingCourseDoc.exists()) throw new Error(`Course with ID ${currentCourseId} not found.`);
-      const existingCourseData = existingCourseDoc.data() as Course;
+    } else { // Updating an existing course document or creating a suggestion from an approved one
+      const existingCourseDocRef = doc(db, CURRICULUM_COLLECTION_NAME, currentCourseId);
+      const existingCourseDocSnap = await getDoc(existingCourseDocRef);
+      if (!existingCourseDocSnap.exists()) throw new Error(`Course with ID ${currentCourseId} not found.`);
+      const existingCourseData = existingCourseDocSnap.data() as Course;
 
-      if (existingCourseData.isApproved) {
-        const suggestionData: Omit<Course, 'id'> = {
+      if (existingCourseData.isApproved) { // Submitting changes to an approved course (creates a new suggestion document)
+        const suggestionDocData: Omit<Course, 'id'> = {
           ...courseContent, progress, isApproved: false, submittedBy: currentUserEmail,
-          submittedAt: submittedAtTimestamp as Timestamp, originalCourseId: currentCourseId,
+          submittedAt: timestampForSubmission as Timestamp, originalCourseId: currentCourseId,
           version: existingCourseData.version,
         };
         const courseCollectionRef = collection(db, CURRICULUM_COLLECTION_NAME);
-        const suggestionDocRef = await addDoc(courseCollectionRef, suggestionData);
-        newCourseIdToReturn = suggestionDocRef.id;
-        console.log(`New suggestion created: ${newCourseIdToReturn} for original ${currentCourseId}`);
-        summaryData = {
-          title: suggestionData.title, department: suggestionData.department, progress: suggestionData.progress,
-          isApproved: false, originalCourseId: suggestionData.originalCourseId, version: suggestionData.version,
-          submittedAt: suggestionData.submittedAt, submittedBy: suggestionData.submittedBy,
-        };
-      } else {
-        newCourseIdToReturn = currentCourseId;
+        const suggestionDocRef = await addDoc(courseCollectionRef, suggestionDocData);
+        courseDocIdToReturn = suggestionDocRef.id;
+        console.log(`New suggestion created: ${courseDocIdToReturn} for original ${currentCourseId}`);
+        
+        // DO NOT create a summary entry for the new suggestion
+        shouldWriteToSummary = false;
+
+      } else { // Updating an existing suggestion document
+        courseDocIdToReturn = currentCourseId;
         const suggestionUpdateData = {
-          ...courseContent, progress, submittedBy: currentUserEmail, submittedAt: submittedAtTimestamp,
+          ...courseContent, progress, submittedBy: currentUserEmail,
+          submittedAt: timestampForSubmission,
+          originalCourseId: existingCourseData.originalCourseId,
+          version: existingCourseData.version,
+          isApproved: false,
         };
-        await setDoc(doc(db, CURRICULUM_COLLECTION_NAME, newCourseIdToReturn), suggestionUpdateData, { merge: true });
-        console.log(`Suggestion updated: ${newCourseIdToReturn}`);
-        summaryData = {
-          title: courseContent.title, department: courseContent.department, progress, isApproved: false,
-          submittedAt: submittedAtTimestamp, submittedBy: currentUserEmail,
-          // originalCourseId and version are retained from existing suggestion on update
-          originalCourseId: existingCourseData.originalCourseId, version: existingCourseData.version,
-        };
+        await setDoc(existingCourseDocRef, suggestionUpdateData, { merge: true });
+        console.log(`Suggestion updated: ${courseDocIdToReturn}`);
+
+        // DO NOT update/create a summary entry for an updated suggestion
+        shouldWriteToSummary = false;
       }
     }
-    await setDoc(doc(db, COURSE_SUMMARIES_COLLECTION_NAME, newCourseIdToReturn), summaryData, {merge: true});
-    return newCourseIdToReturn;
+    
+    if (shouldWriteToSummary && summaryEntryData) {
+      const updatePayloadForSummariesDoc = {
+        [`summaries.${courseDocIdToReturn}`]: summaryEntryData
+      };
+      await setDoc(summariesDocRef, updatePayloadForSummariesDoc, { merge: true });
+      console.log(`Summary for approved course ${courseDocIdToReturn} updated in ${CURRICULUM_SUMMARIES_DOC_ID}.`);
+    } else {
+      console.log(`Skipping summary write for suggestion/non-approved course: ${courseDocIdToReturn}`);
+    }
+
+    return courseDocIdToReturn;
   } catch (error) {
     console.error("Error submitting course changes:", error);
     throw error;
@@ -211,33 +230,50 @@ export interface CourseMetadata {
   isApproved: boolean;
   originalCourseId?: string | null;
   version?: number;
+  submittedBy?: string;
 }
 
 export const fetchAllCourseMetadata = async (
   userEmail: string | null,
-  onlyApproved = true
+  // `onlyApproved` will now always effectively be true for this function
+  // as summaries only contain approved courses.
+  // We keep the parameter for potential future changes but note its current behavior.
+  onlyApproved = true 
 ): Promise<CourseMetadata[]> => {
   try {
-    let qBuilder = query(collection(db, COURSE_SUMMARIES_COLLECTION_NAME));
-    if (onlyApproved) {
-      qBuilder = query(qBuilder, where("isApproved", "==", true));
-    }
-    // Consider adding orderBy("title") or orderBy("department") then by("title")
+    const summariesDocRef = doc(db, CURRICULUM_COLLECTION_NAME, CURRICULUM_SUMMARIES_DOC_ID);
+    const summariesSnap = await getDoc(summariesDocRef);
 
-    const querySnapshot = await getDocs(qBuilder);
-    let allSummaries: CourseMetadata[] = [];
-    querySnapshot.forEach((doc) => {
-      const data = doc.data();
-      allSummaries.push({
-        id: doc.id,
-        title: data.title || 'Untitled Course',
-        department: data.department || 'Uncategorized',
-        progress: typeof data.progress === 'number' ? data.progress : 0,
-        isApproved: data.isApproved === true,
-        originalCourseId: data.originalCourseId || null,
-        version: typeof data.version === 'number' ? data.version : undefined,
-      });
-    });
+    let allSummariesFromMap: CourseMetadata[] = [];
+
+    if (summariesSnap.exists()) {
+      const summariesContainer = summariesSnap.data();
+      const summariesData = summariesContainer?.summaries;
+      if (summariesData && typeof summariesData === 'object') {
+        allSummariesFromMap = Object.entries(summariesData)
+          .map(([id, summary]: [string, any]) => ({ // Filter here to ensure only approved summaries are processed
+            id: id,
+            title: summary.title || 'Untitled Course',
+            department: summary.department || 'Uncategorized',
+            progress: typeof summary.progress === 'number' ? summary.progress : 0,
+            isApproved: summary.isApproved === true, // Should always be true if it's in summaries now
+            originalCourseId: summary.originalCourseId || null,
+            version: typeof summary.version === 'number' ? summary.version : undefined,
+            submittedBy: summary.submittedBy,
+          }))
+          .filter(summary => summary.isApproved); // Explicit filter, though ideally only approved are written
+      }
+    } else {
+      console.log(`Summaries document (${CURRICULUM_SUMMARIES_DOC_ID}) not found. Creating it.`);
+      await setDoc(summariesDocRef, { summaries: {} });
+      return [];
+    }
+
+    // The `onlyApproved` parameter becomes less relevant if summaries *only* store approved courses.
+    // However, if there's a chance non-approved sneak in or for future flexibility:
+    // if (onlyApproved) {
+    //   allSummariesFromMap = allSummariesFromMap.filter(summary => summary.isApproved);
+    // }
 
     if (userEmail && !ADMIN_EMAILS.includes(userEmail)) {
       const authorizedTitles = await fetchTeacherAuthorizedCourseTitles(userEmail);
@@ -249,11 +285,11 @@ export const fetchAllCourseMetadata = async (
         console.log(`Teacher ${userEmail} has no courses assigned in their teacher document.`);
         return [];
       }
-      return allSummaries.filter(summary => authorizedTitles.includes(summary.title));
+      return allSummariesFromMap.filter(summary => authorizedTitles.includes(summary.title));
     }
-    return allSummaries;
+    return allSummariesFromMap.sort((a, b) => a.title.localeCompare(b.title));
   } catch (error) {
-    console.error("Error fetching course metadata from summaries:", error);
+    console.error("Error fetching course metadata from summaries document:", error);
     throw error;
   }
 };
@@ -261,6 +297,7 @@ export const fetchAllCourseMetadata = async (
 export const approveCourseSuggestion = async (suggestionId: string, approverEmail: string): Promise<string> => {
     const suggestionRef = doc(db, CURRICULUM_COLLECTION_NAME, suggestionId);
     const suggestionSnap = await getDoc(suggestionRef);
+    const summariesDocRef = doc(db, CURRICULUM_COLLECTION_NAME, CURRICULUM_SUMMARIES_DOC_ID);
 
     if (!suggestionSnap.exists()) throw new Error(`Suggestion ${suggestionId} not found.`);
     const suggestionData = suggestionSnap.data() as Course;
@@ -268,42 +305,95 @@ export const approveCourseSuggestion = async (suggestionId: string, approverEmai
 
     let newVersion = 1;
     const serverTime = serverTimestamp();
+    
+    const updatesForSummariesDoc: Record<string, any> = {};
 
-    if (!suggestionData.originalCourseId) { // Approving a base document that was marked as not approved
-        newVersion = (suggestionData.version || 0) + 1;
-        await setDoc(suggestionRef, {
-            isApproved: true, approvedBy: approverEmail, submittedAt: serverTime, version: newVersion,
-        }, { merge: true });
-        await setDoc(doc(db, COURSE_SUMMARIES_COLLECTION_NAME, suggestionId), {
-            isApproved: true, version: newVersion, submittedAt: serverTime,
-        }, { merge: true });
-        console.log(`Course ${suggestionId} approved as version ${newVersion}.`);
-        return suggestionId;
+    // Update the suggestion document to be approved
+    await updateDoc(suggestionRef, {
+        isApproved: true,
+        approvedBy: approverEmail,
+        submittedAt: serverTime, // Update submittedAt to approval time
+        // version will be set below based on original or current
+        originalCourseId: null, // It becomes the new main approved version
+    });
+
+    // Logic for versioning and handling the original course (if any)
+    if (suggestionData.originalCourseId) {
+        // This suggestion was based on a previously approved course
+        const originalCourseRef = doc(db, CURRICULUM_COLLECTION_NAME, suggestionData.originalCourseId);
+        const originalCourseSnap = await getDoc(originalCourseRef);
+
+        if (originalCourseSnap.exists()) {
+            const originalCourseData = originalCourseSnap.data() as Course;
+            newVersion = (originalCourseData.version || 0) + 1;
+            // Mark original course (full doc) as not approved
+            await updateDoc(originalCourseRef, { isApproved: false });
+            // Remove the old approved course's summary
+            updatesForSummariesDoc[`summaries.${suggestionData.originalCourseId}`] = deleteField();
+            console.log(`Original course ${suggestionData.originalCourseId} marked as not approved and its summary removed.`);
+        } else {
+            // Original course not found, treat suggestion as a new base (its version might need adjustment)
+            newVersion = (suggestionData.version || 0) + 1; // Or simply 1 if it was a fresh suggestion
+            console.warn(`Original course ${suggestionData.originalCourseId} not found for suggestion ${suggestionId}. Approving suggestion as new base with version ${newVersion}.`);
+        }
+    } else {
+        // This suggestion was not based on a previous approved course (e.g., it was a new course created as a suggestion)
+        newVersion = (suggestionData.version || 0) + 1; // Increment its own version
     }
 
-    // Standard suggestion approval: deactivate old, activate new
-    const originalCourseRef = doc(db, CURRICULUM_COLLECTION_NAME, suggestionData.originalCourseId);
-    const originalCourseSnap = await getDoc(originalCourseRef);
+    // Update the version on the now-approved suggestion document
+    await updateDoc(suggestionRef, { version: newVersion });
 
-    if (originalCourseSnap.exists()) {
-        const originalCourseData = originalCourseSnap.data() as Course;
-        newVersion = (originalCourseData.version || 0) + 1;
-        await setDoc(originalCourseRef, { isApproved: false }, { merge: true });
-        await setDoc(doc(db, COURSE_SUMMARIES_COLLECTION_NAME, suggestionData.originalCourseId), { isApproved: false }, { merge: true });
+    // Add/Update summary for the newly approved course (which was the suggestion)
+    // Fetch the latest suggestion data again AFTER updates to ensure `progress` and other fields are current for summary
+    const finalApprovedCourseSnap = await getDoc(suggestionRef);
+    const finalApprovedCourseData = finalApprovedCourseSnap.data() as Course;
+
+    updatesForSummariesDoc[`summaries.${suggestionId}`] = {
+        title: finalApprovedCourseData.title,
+        department: finalApprovedCourseData.department,
+        progress: finalApprovedCourseData.progress, // Use potentially updated progress
+        isApproved: true,
+        originalCourseId: null,
+        version: newVersion,
+        submittedAt: serverTime, // Reflects approval/new submission time
+        submittedBy: finalApprovedCourseData.submittedBy, // Person who created the suggestion content
+        approvedBy: approverEmail,
+    };
+    
+    if (Object.keys(updatesForSummariesDoc).length > 0) {
+        await updateDoc(summariesDocRef, updatesForSummariesDoc);
     }
-
-    await setDoc(suggestionRef, {
-        isApproved: true, submittedBy: suggestionData.submittedBy, // Keep original submitter
-        submittedAt: serverTime, approvedBy: approverEmail, version: newVersion,
-        originalCourseId: null, // It becomes the new approved version
-    }, { merge: true });
-
-    await setDoc(doc(db, COURSE_SUMMARIES_COLLECTION_NAME, suggestionId), {
-        isApproved: true, originalCourseId: null, version: newVersion, submittedAt: serverTime,
-    }, { merge: true });
-
-    console.log(`Suggestion ${suggestionId} approved. New version is ${newVersion}. Original ${suggestionData.originalCourseId} marked as not approved.`);
+    
+    console.log(`Suggestion ${suggestionId} approved. New version is ${newVersion}.`);
     return suggestionId;
+};
+
+export const deleteCourseAndSummary = async (courseIdToDelete: string): Promise<void> => {
+  if (courseIdToDelete === CURRICULUM_SUMMARIES_DOC_ID) {
+    throw new Error("Cannot delete the main summaries document through this function.");
+  }
+
+  const courseDocRef = doc(db, CURRICULUM_COLLECTION_NAME, courseIdToDelete);
+  const summariesDocRef = doc(db, CURRICULUM_COLLECTION_NAME, CURRICULUM_SUMMARIES_DOC_ID);
+
+  try {
+    await deleteDoc(courseDocRef);
+    console.log(`Course document ${courseIdToDelete} deleted.`);
+
+    const summariesSnap = await getDoc(summariesDocRef);
+    if (summariesSnap.exists() && summariesSnap.data()?.summaries) {
+        await updateDoc(summariesDocRef, {
+            [`summaries.${courseIdToDelete}`]: deleteField()
+        });
+        console.log(`Summary entry for ${courseIdToDelete} deleted from ${CURRICULUM_SUMMARIES_DOC_ID}.`);
+    } else {
+        console.warn(`Summaries document or summaries map not found when trying to delete entry for ${courseIdToDelete}.`);
+    }
+  } catch (error) {
+    console.error(`Error deleting course ${courseIdToDelete} and its summary:`, error);
+    throw error;
+  }
 };
 
 export { db, auth };

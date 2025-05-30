@@ -26,7 +26,7 @@ export const fieldConfig = {
     biblicalBasis: { label: 'Biblical Basis', type: FieldType.RichText, isSectionHeader: true } as FieldConfigItem,
     materials: { label: 'Materials', type: FieldType.RichText, isSectionHeader: true } as FieldConfigItem,
     pacing: { label: 'Pacing', type: FieldType.RichText, isSectionHeader: true } as FieldConfigItem,
-  } as Record<keyof Omit<Course, 'id' | 'units' | 'progress' /* 'name' was already implicitly excluded by Omit */>, FieldConfigItem>, // Exclude progress
+  } as Record<keyof Omit<Course, 'id' | 'units' | 'progress' | 'isApproved' | 'submittedBy' | 'submittedAt' | 'version' | 'originalCourseId'>, FieldConfigItem>,
   unit: {
     unitName: { label: 'Unit Name:', type: FieldType.EditableHeader, defaultLevel: 2, isSectionHeader: true } as FieldConfigItem,
     timeAllotted: { label: 'Time Allotted:', type: FieldType.PlainText, isSectionHeader: false } as FieldConfigItem, // Retain as PlainText for now
@@ -51,7 +51,7 @@ export function courseToTiptapJson(course: Course): JSONContent {
       level: fieldConfig.course.title.defaultLevel || 1,
       label: fieldConfig.course.title.label,
       fieldKey: 'course.title',
-      sectionId: COURSE_HEADER_SECTION_ID,
+      sectionId: COURSE_HEADER_SECTION_ID, // For scrolling to the top of the course
     },
     content: courseTitleText ? [{ type: 'text', text: courseTitleText }] : [],
   });
@@ -64,6 +64,7 @@ export function courseToTiptapJson(course: Course): JSONContent {
       level: fieldConfig.course.department.defaultLevel || 3,
       label: fieldConfig.course.department.label,
       fieldKey: 'course.department',
+      // No sectionId needed here unless it's a scroll target
     },
     content: courseSubjectText ? [{ type: 'text', text: courseSubjectText }] : [],
   });
@@ -92,7 +93,7 @@ export function courseToTiptapJson(course: Course): JSONContent {
       } else if (jsonData.type && jsonData.content) { // Single node object
         content.push(jsonData);
       } else { // Fallback for truly empty or unparseable as array of nodes
-        content.push({ type: 'paragraph' });
+        content.push({ type: 'paragraph' }); // Add an empty paragraph so the section is editable
       }
     } catch (e) {
       console.warn(`Failed to parse JSON for course field ${String(fieldKey)}, adding empty paragraph. Data:`, data, "Error:", e);
@@ -120,7 +121,7 @@ export function courseToTiptapJson(course: Course): JSONContent {
         level: fieldConfig.unit.unitName.defaultLevel || 2,
         label: fieldConfig.unit.unitName.label,
         fieldKey: `unit.${unit.id}.unitName`,
-        sectionId: unit.id,
+        sectionId: unit.id, // This ID is used for scrolling to the unit
       },
       content: unitNameText ? [{ type: 'text', text: unitNameText }] : [],
     });
@@ -164,7 +165,7 @@ export function courseToTiptapJson(course: Course): JSONContent {
           } else if (jsonData.type && jsonData.content){
              content.push(jsonData);
           } else {
-            content.push({ type: 'paragraph' });
+            content.push({ type: 'paragraph' }); // Add an empty paragraph so the section is editable
           }
         } catch (e) {
           console.warn(`Failed to parse JSON for unit ${unit.id} field ${String(fieldKey)}, adding empty paragraph. Data:`, unitData, "Error:", e);
@@ -188,10 +189,10 @@ export function tiptapJsonToCourse(json: JSONContent, originalCourse: Course): C
     biblicalBasis: EMPTY_ARRAY_JSON_STRING,
     materials: EMPTY_ARRAY_JSON_STRING,
     pacing: EMPTY_ARRAY_JSON_STRING,
-    units: originalCourse.units.map(u => ({ // Preserve unit IDs and structure
+    units: originalCourse.units.map(u => ({ // Preserve unit IDs and structure, initialize fields
       ...u,
-      unitName: '',
-      timeAllotted: '', // Initialize plain text fields
+      unitName: '', // Will be populated by parser
+      timeAllotted: '', // Initialize plain text fields, will be populated
       learningObjectives: EMPTY_ARRAY_JSON_STRING,
       standards: EMPTY_ARRAY_JSON_STRING,
       biblicalIntegration: EMPTY_ARRAY_JSON_STRING,
@@ -213,12 +214,14 @@ export function tiptapJsonToCourse(json: JSONContent, originalCourse: Course): C
     }
 
     const { scope, key, type } = currentFieldContext;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let finalContent: any;
 
     if (type === FieldType.EditableHeader) {
+      // Editable header's content is directly in the first node (the header itself)
       finalContent = fieldContentAccumulator[0]?.content?.map(cn => cn.text || '').join('').trim() || '';
     } else if (type === FieldType.PlainText) { // For timeAllotted specifically
-        // Assuming the plain text is directly in the first paragraph node's text content
+        // Plain text is in the first paragraph node's text content
         finalContent = fieldContentAccumulator[0]?.content?.map(cn => cn.text || '').join('').trim() || '';
     } else { // RichText
       finalContent = JSON.stringify({ type: 'doc', content: fieldContentAccumulator });
@@ -231,7 +234,7 @@ export function tiptapJsonToCourse(json: JSONContent, originalCourse: Course): C
       if (unit) {
         (unit as any)[key] = finalContent;
       } else {
-        console.warn(`tiptapJsonToCourse: Unit with ID ${currentUnitId} not found for key ${key}.`);
+        console.warn(`tiptapJsonToCourse: Unit with ID ${currentUnitId} not found for key ${key}. This might happen if units were deleted. Original units:`, originalCourse.units);
       }
     }
     fieldContentAccumulator = [];
@@ -240,40 +243,40 @@ export function tiptapJsonToCourse(json: JSONContent, originalCourse: Course): C
   json.content?.forEach(node => {
     const nodeType = node.type;
     const attrs = node.attrs || {};
-    const fieldKeyAttr = attrs.fieldKey as string; // e.g., "course.title", "unit.unitId.unitName.header"
-    const fieldKeyForPlainTextAttr = attrs.fieldKeyForPlainText as string; // e.g., "unit.unitId.timeAllotted"
+    const fieldKeyAttr = attrs.fieldKey as string;
+    const fieldKeyForPlainTextAttr = attrs.fieldKeyForPlainText as string;
 
 
     if (nodeType === 'editableHeader') {
-      saveAccumulatedContent(); // Save previous field's content
-      const parts = fieldKeyAttr.split('.'); // [scope, key] or [scope, unitId, key]
-      if (parts[0] === 'course') {
+      saveAccumulatedContent();
+      const parts = fieldKeyAttr.split('.');
+      if (parts[0] === 'course') { // e.g., "course.title"
         currentUnitId = null;
         currentFieldContext = { scope: 'course', key: parts[1], type: FieldType.EditableHeader };
-        fieldContentAccumulator.push(node); // Accumulate the header node itself for its text content
-        saveAccumulatedContent(); // Save this editable header immediately
+        fieldContentAccumulator.push(node);
+        saveAccumulatedContent();
         currentFieldContext = null;
-      } else if (parts[0] === 'unit') {
-        currentUnitId = attrs.sectionId as string || parts[1]; // Use sectionId which is the unit.id
+      } else if (parts[0] === 'unit') { // e.g., "unit.unitId.unitName"
+        currentUnitId = attrs.sectionId as string || parts[1]; // sectionId on node is the unit.id
         currentFieldContext = { scope: 'unit', key: 'unitName', type: FieldType.EditableHeader };
         fieldContentAccumulator.push(node);
         saveAccumulatedContent();
         currentFieldContext = null;
       }
     } else if (nodeType === 'unmodifiableHeader') {
-      saveAccumulatedContent(); // Save previous field's content
-      const headerFieldKey = attrs.fieldKey as string; // e.g. "course.description.header" or "unit.xyz.learningObjectives.header"
-      const parts = headerFieldKey.split('.');
+      saveAccumulatedContent();
+      const headerFieldKey = attrs.fieldKey as string; // e.g. "course.description.header" or "unit.unitId.learningObjectives.header"
+      const parts = headerFieldKey.split('.'); // [scope, (unitId or key), key, "header"]
       const scope = parts[0] as 'course' | 'unit';
       let key: string;
 
-      if (scope === 'course') {
+      if (scope === 'course') { // e.g. "course.description.header" -> key="description"
         currentUnitId = null;
-        key = parts[1]; // e.g. "description"
+        key = parts[1];
         currentFieldContext = { scope, key, type: fieldConfig.course[key as keyof typeof fieldConfig.course]?.type || FieldType.RichText };
-      } else if (scope === 'unit') {
+      } else if (scope === 'unit') { // e.g. "unit.unitId.learningObjectives.header" -> key="learningObjectives"
         currentUnitId = parts[1]; // unitId
-        key = parts[2]; // e.g. "learningObjectives"
+        key = parts[2]; // field name
         const unitConfig = fieldConfig.unit[key as keyof typeof fieldConfig.unit];
         currentFieldContext = { scope, key, type: unitConfig?.type || FieldType.RichText };
       }
@@ -282,41 +285,38 @@ export function tiptapJsonToCourse(json: JSONContent, originalCourse: Course): C
         const parts = fieldKeyForPlainTextAttr.split('.'); // "unit.unitId.timeAllotted"
         if (parts[0] === 'unit' && parts[1] === currentUnitId && parts[2] === currentFieldContext.key) {
             fieldContentAccumulator.push(node);
-            saveAccumulatedContent(); // Save this plain text field immediately
-            currentFieldContext = null; // Reset context after plain text is saved
+            saveAccumulatedContent();
+            currentFieldContext = null;
         }
     } else if (currentFieldContext && currentFieldContext.type === FieldType.RichText) {
-      // Accumulate content for the current RichText field
       fieldContentAccumulator.push(node);
     }
   });
 
   saveAccumulatedContent(); // Save any remaining content
 
-  // Ensure all units from originalCourse are present and fields are initialized if empty
-  newCourse.units = originalCourse.units.map(originalUnit => {
-    let processedUnit = newCourse.units.find(nu => nu.id === originalUnit.id);
-    if (!processedUnit) { // Should not happen if mapping from originalCourse.units initially
-      console.warn(`Unit ${originalUnit.id} was in original but not found after processing. Re-adding as empty.`);
-      processedUnit = { ...originalUnit }; // Create a new object for safety
-      (Object.keys(fieldConfig.unit) as Array<keyof Omit<Unit, 'id'>>).forEach(key => {
-        const conf = fieldConfig.unit[key];
-        if (conf?.type === FieldType.RichText) (processedUnit as any)[key] = EMPTY_ARRAY_JSON_STRING;
-        else if (conf?.type === FieldType.PlainText || conf?.type === FieldType.EditableHeader) (processedUnit as any)[key] = '';
-      });
-    } else { // Ensure all fields are at least initialized
-        (Object.keys(fieldConfig.unit) as Array<keyof Omit<Unit, 'id'>>).forEach(key => {
-            if (processedUnit && !(processedUnit as any)[key]) { // If field is falsy (empty string, null, undefined)
-                 const conf = fieldConfig.unit[key];
-                 if (conf?.type === FieldType.RichText) (processedUnit as any)[key] = EMPTY_ARRAY_JSON_STRING;
-                 else if (conf?.type === FieldType.PlainText || conf?.type === FieldType.EditableHeader) (processedUnit as any)[key] = '';
-            }
-        });
+  // Ensure all units from originalCourse are present in newCourse.
+  // The initial map of originalCourse.units to newCourse.units should handle preservation.
+  // This step is more of a sanity check or for fields that might not have been explicitly processed if content was missing.
+  newCourse.units = newCourse.units.map(processedUnit => {
+    const originalUnit = originalCourse.units.find(ou => ou.id === processedUnit.id);
+    if (!originalUnit) {
+      // This case should ideally not happen if newCourse.units was derived from originalCourse.units
+      console.warn(`Processed unit ${processedUnit.id} has no corresponding original unit. This is unexpected.`);
+      return processedUnit; // Return as is, though it might be incomplete
     }
-    return processedUnit!;
-  });
+    // Ensure all defined fields in fieldConfig.unit are at least initialized on the processed unit
+    (Object.keys(fieldConfig.unit) as Array<keyof Omit<Unit, 'id'>>).forEach(key => {
+        if (!(processedUnit as any)[key]) { // If field is falsy (empty string, null, undefined) after parsing
+             const conf = fieldConfig.unit[key];
+             if (conf?.type === FieldType.RichText) (processedUnit as any)[key] = EMPTY_ARRAY_JSON_STRING;
+             else if (conf?.type === FieldType.PlainText || conf?.type === FieldType.EditableHeader) (processedUnit as any)[key] = '';
+        }
+    });
+    return processedUnit;
+  }).filter(unit => unit); // Filter out any potentially undefined units if something went very wrong
 
-  // Ensure all course fields are initialized if empty
+  // Ensure all course-level fields are initialized if empty after parsing
   (Object.keys(fieldConfig.course) as Array<keyof typeof fieldConfig.course>).forEach(key => {
     if (!(newCourse as any)[key]) {
         const conf = fieldConfig.course[key];
@@ -324,6 +324,5 @@ export function tiptapJsonToCourse(json: JSONContent, originalCourse: Course): C
         else if (conf?.type === FieldType.EditableHeader) (newCourse as any)[key] = '';
     }
   });
-
   return newCourse;
 }
