@@ -446,33 +446,6 @@ function App() {
 
         <AppShell.Main>
           <LoadingOverlay visible={isLoading} overlayProps={{ radius: 'sm', blur: 2 }} />
-          {error && !saveErrorNotification && ( <Alert icon={<IconAlertCircle size="1rem" />} title="Error" color="red" withCloseButton onClose={() => setError(null)} mb="md">{error}</Alert> )}
-          {showSaveSuccessNotification && (
-            <Notification
-              icon={<IconCheck size="1.2rem" />}
-              color="teal"
-              title="Success"
-              onClose={() => setShowSaveSuccessNotification(false)}
-              style={{ position: 'fixed', top: 70, right: 20, zIndex: 1000 }}
-              withCloseButton
-              autoClose={3000}
-            >
-              Course action successful!
-            </Notification>
-          )}
-          {saveErrorNotification && (
-            <Notification
-              icon={<IconAlertCircle size="1.2rem" />}
-              color="red"
-              title="Operation Error"
-              onClose={() => setSaveErrorNotification(null)}
-              style={{ position: 'fixed', top: 70, right: 20, zIndex: 1000 }}
-              withCloseButton
-              autoClose={5000}
-            >
-              {saveErrorNotification}
-            </Notification>
-          )}
 
           {currentCourse && selectedCourseId ? (
             <CurriculumEditor
