@@ -257,7 +257,7 @@ function App() {
             } else {
                 console.warn(`[DEBUG App.tsx useEffect scrollToSection] editorRef.current or scrollToSection not available in timeout. editorRef.current:`, editorRef.current);
             }
-        }, 250); // Increased delay slightly for DOM rendering, can be adjusted
+        }, 400); // Changed timeout to 400ms
         return () => {
             console.log(`[DEBUG App.tsx useEffect scrollToSection] Clearing timeout for tab: ${activeTab}`);
             clearTimeout(timeoutId);
@@ -624,7 +624,8 @@ function App() {
                   overflow: 'hidden',
                   display: 'flex',
                   flexDirection: 'column',
-                  minHeight: 0 // <<< THE CRITICAL FIX
+                  minHeight: 0, // <<< THE CRITICAL FIX
+                  // Removed backgroundColor: 'rgba(0, 0, 255, 0.1)'
                 }}
               >
                 <CurriculumEditor ref={editorRef} key={editorKey} initialCourseData={currentCourse} onSave={handleSubmitChanges} courseId={selectedCourseId} isApprovedCourse={currentCourse.isApproved} isSuggestion={!currentCourse.isApproved && !!currentCourse.originalCourseId} />
