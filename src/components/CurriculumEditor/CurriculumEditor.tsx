@@ -76,52 +76,75 @@ const CurriculumEditor = forwardRef<CurriculumEditorRef, CurriculumEditorProps>(
 
     useImperativeHandle(ref, () => ({
       scrollToSection: (sectionId: string) => {
-        // console.log(`[DEBUG scrollToSection] Called with sectionId: ${sectionId}`);
+        console.log(`[CurriculumEditor] scrollToSection called with sectionId: ${sectionId}`);
 
         if (!editor || editor.isDestroyed) {
-          // console.warn("[DEBUG scrollToSection] Editor not ready or destroyed.");
+          console.warn("[CurriculumEditor] Editor not ready or destroyed.");
           return;
         }
         if (!editor.view || !editor.view.dom) {
-          // console.warn("[DEBUG scrollToSection] Editor view or DOM not ready.");
+          console.warn("[CurriculumEditor] Editor view or DOM not ready.");
           return;
         }
 
         let scrollableContainer = editor.view.dom.closest('.mantine-RichTextEditor-content') as HTMLElement | null;
+        console.log('[CurriculumEditor] Initial scrollableContainer:', scrollableContainer);
 
         if (!scrollableContainer) {
-          // console.warn("[DEBUG scrollToSection] '.mantine-RichTextEditor-content' not found. Falling back.");
+          console.warn("[CurriculumEditor] '.mantine-RichTextEditor-content' not found. Falling back to editor.view.dom.parentElement.");
           scrollableContainer = editor.view.dom.parentElement as HTMLElement | null;
+          console.log('[CurriculumEditor] Fallback scrollableContainer:', scrollableContainer);
           if (!scrollableContainer) {
-            // console.warn("[DEBUG scrollToSection] Fallback scroll container also not found.");
+            console.warn("[CurriculumEditor] Fallback scroll container also not found. Cannot scroll.");
             return;
           }
         }
         
-        // console.log(`[DEBUG scrollToSection] scrollableContainer.scrollHeight: ${scrollableContainer.scrollHeight}, scrollableContainer.clientHeight: ${scrollableContainer.clientHeight}, scrollableContainer.scrollTop: ${scrollableContainer.scrollTop}`);
-
+        console.log(`[CurriculumEditor] scrollableContainer details: scrollHeight: ${scrollableContainer.scrollHeight}, clientHeight: ${scrollableContainer.clientHeight}, scrollTop: ${scrollableContainer.scrollTop}`);
 
         if (sectionId === COURSE_HEADER_SECTION_ID) {
+          console.log('[CurriculumEditor] Scrolling to top for COURSE_HEADER_SECTION_ID.');
           scrollableContainer.scrollTo({ top: 0, behavior: 'smooth' });
           return;
         }
 
         const selector = `[data-section-id="${CSS.escape(sectionId)}"]`;
         const targetElement = editor.view.dom.querySelector(selector) as HTMLElement | null;
+        console.log(`[CurriculumEditor] Attempting to find targetElement with selector: ${selector}`, targetElement);
         
-        if (targetElement && scrollableContainer) {
-          const scrollableContainerRect = scrollableContainer.getBoundingClientRect();
-          const targetElementRect = targetElement.getBoundingClientRect();
-          const offsetTopInScroller = targetElementRect.top - scrollableContainerRect.top;
-          const newScrollTop = scrollableContainer.scrollTop + offsetTopInScroller;
-          const finalScrollTo = newScrollTop - 10;
+        if (targetElement) {
+          console.log('[CurriculumEditor] Target element found. Attempting scrollIntoView first.');
+          targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-          scrollableContainer.scrollTo({
-            top: finalScrollTo,
-            behavior: 'smooth',
-          });
+          // Fallback logic if scrollIntoView is not sufficient (e.g. if it doesn't work in all cases)
+          // For now, we will trust scrollIntoView and not implement the more complex fallback.
+          // If issues arise, the following commented-out block can be revisited.
+          /*
+          if (scrollableContainer) {
+            const scrollableContainerRect = scrollableContainer.getBoundingClientRect();
+            const targetElementRect = targetElement.getBoundingClientRect();
+
+            // Check if the element is already in view after scrollIntoView
+            // This check might be overly simplistic and might need refinement
+            if (targetElementRect.top < scrollableContainerRect.top || targetElementRect.bottom > scrollableContainerRect.bottom) {
+              console.log('[CurriculumEditor] scrollIntoView might not have been sufficient, attempting manual scroll. This path should ideally not be hit frequently.');
+              const offsetTopInScroller = targetElementRect.top - scrollableContainerRect.top;
+              const newScrollTop = scrollableContainer.scrollTop + offsetTopInScroller;
+              // Removed the -10 offset as per requirements
+              const finalScrollTo = newScrollTop;
+              console.log(`[CurriculumEditor] Manual scroll fallback: scrollableContainerRect.top=${scrollableContainerRect.top}, targetElementRect.top=${targetElementRect.top}, offsetTopInScroller=${offsetTopInScroller}, currentScrollTop=${scrollableContainer.scrollTop}, newScrollTop=${newScrollTop}, finalScrollTo=${finalScrollTo}`);
+
+              scrollableContainer.scrollTo({
+                top: finalScrollTo,
+                behavior: 'smooth',
+              });
+            } else {
+              console.log('[CurriculumEditor] Target element likely already in view after scrollIntoView.');
+            }
+          }
+          */
         } else {
-          // console.warn(`[DEBUG scrollToSection] Element with data-section-id="${sectionId}" not found. Scrolling to top.`);
+          console.warn(`[CurriculumEditor] Element with data-section-id="${sectionId}" not found. Scrolling to top of scrollable container as a fallback.`);
           if (scrollableContainer) {
             scrollableContainer.scrollTo({ top: 0, behavior: 'smooth' });
           }
@@ -177,11 +200,11 @@ const CurriculumEditor = forwardRef<CurriculumEditorRef, CurriculumEditorProps>(
     const HEADER_HEIGHT_FOR_STICKY = 60;
 
     return (
-      <Stack style={{ height: '100%', overflow: 'hidden' }} gap={0}> {/* Added minHeight: 0 here if needed, but App.tsx change is more primary */}
+      <Stack style={{ height: '100%' }} gap={0}> {/* Removed overflow: 'hidden' */}
         <RichTextEditor
           editor={editor}
           // Added minHeight:0 here if needed, but App.tsx Box is more primary
-          style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }} 
+          style={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }} // Removed overflow: 'hidden'
           styles={(editorTheme: MantineTheme) => ({
             root: {
                 display: 'flex',
@@ -195,6 +218,7 @@ const CurriculumEditor = forwardRef<CurriculumEditorRef, CurriculumEditorProps>(
               flexBasis: '0%', // Important for flex-grow to work correctly
               overflowY: 'auto', 
               padding: 0,
+              // Removed backgroundColor: 'rgba(255, 0, 0, 0.1)'
               '& .ProseMirror': { 
                 padding: editorTheme.spacing.md,
                 // Ensure no height: 100% or min-height: 100% here
