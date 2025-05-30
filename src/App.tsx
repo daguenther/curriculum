@@ -257,7 +257,7 @@ function App() {
             } else {
                 console.warn(`[DEBUG App.tsx useEffect scrollToSection] editorRef.current or scrollToSection not available in timeout. editorRef.current:`, editorRef.current);
             }
-        }, 400); // Changed timeout to 400ms
+        }, 10); // Changed timeout to 400ms
         return () => {
             console.log(`[DEBUG App.tsx useEffect scrollToSection] Clearing timeout for tab: ${activeTab}`);
             clearTimeout(timeoutId);
