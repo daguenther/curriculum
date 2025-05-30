@@ -1,7 +1,8 @@
 // src/components/StatusBar/StatusBar.tsx
 import React from 'react';
 import { Paper, Text, Progress, useMantineTheme } from '@mantine/core';
-import type { Course } from '../../types';
+import type { Course } // Unit removed as we don't pass unit directly
+from '../../types';
 import { isRichTextEmpty } from '../../utils/completionUtils';
 
 interface StatusBarProps {
@@ -12,17 +13,43 @@ const StatusBar: React.FC<StatusBarProps> = ({ currentCourse }) => {
   const theme = useMantineTheme();
 
   if (!currentCourse) {
-    return null; // Or a placeholder like <Text c="dimmed">No course loaded.</Text>
+    return null;
   }
 
-  const courseLevelFields: (keyof Pick<Course, 'description' | 'biblicalBasis' | 'materials' | 'pacing'>)[] = [
+  // Fields to check for overall course completion for the status bar
+  // This is a client-side calculation for this component's display.
+  // The authoritative `progress` is on the Course object from Firebase.
+  
+  let totalSections = 0;
+  let completedSections = 0;
+
+  // Course Title
+  totalSections++;
+  if (currentCourse.title && currentCourse.title.trim() !== '') {
+    completedSections++;
+  }
+  // Course Subject (Department)
+  totalSections++;
+  if (currentCourse.department && currentCourse.department.trim() !== '') {
+    completedSections++;
+  }
+
+  // Course-level rich text fields
+  const courseRichTextFields: (keyof Pick<Course, 'description' | 'biblicalBasis' | 'materials' | 'pacing'>)[] = [
     'description',
     'biblicalBasis',
     'materials',
     'pacing',
   ];
+  courseRichTextFields.forEach((field) => {
+    totalSections++;
+    if (!isRichTextEmpty(currentCourse[field])) {
+      completedSections++;
+    }
+  });
 
-  const unitLevelFields: (keyof Course['units'][0])[] = [
+  // Unit-level fields for each unit
+  const unitRichTextFields: (keyof Omit<Course['units'][0], 'id' | 'unitName' | 'timeAllotted'>)[] = [
     'learningObjectives',
     'standards',
     'biblicalIntegration',
@@ -31,60 +58,40 @@ const StatusBar: React.FC<StatusBarProps> = ({ currentCourse }) => {
     'assessments',
   ];
 
-  let totalSections = 0;
-  let completedSections = 0;
-
-  // Check course-level fields
-  courseLevelFields.forEach((field) => {
-    totalSections++;
-    if (!isRichTextEmpty(currentCourse[field])) {
-      completedSections++;
-    }
-  });
-
-  // Check unit-level fields for each unit
   if (currentCourse.units && currentCourse.units.length > 0) {
     currentCourse.units.forEach((unit) => {
-      unitLevelFields.forEach((field) => {
+      // Unit Name (plain text)
+      totalSections++;
+      if (unit.unitName && unit.unitName.trim() !== '') {
+          completedSections++;
+      }
+      // Unit Time Allotted (plain text)
+      totalSections++;
+      if (unit.timeAllotted && unit.timeAllotted.trim() !== '') {
+          completedSections++;
+      }
+
+      unitRichTextFields.forEach((field) => {
         totalSections++;
-        // Ensure unit[field] is passed as string | undefined | null
         const fieldValue = unit[field] as string | undefined | null;
         if (!isRichTextEmpty(fieldValue)) {
           completedSections++;
         }
       });
-      // Also consider unitName as a section (it's plain text, but important)
-      // For plain text fields, empty means an empty string or null/undefined.
-      // isRichTextEmpty isn't directly for plain text, so we'll do a direct check.
-      totalSections++;
-      if (unit.unitName && unit.unitName.trim() !== '') {
-          completedSections++;
-      }
     });
   }
-  
-  // Also consider course title and name as sections (plain text)
-  totalSections++;
-  if (currentCourse.title && currentCourse.title.trim() !== '') {
-    completedSections++;
-  }
-  totalSections++;
-  if (currentCourse.name && currentCourse.name.trim() !== '') {
-    completedSections++;
-  }
 
-
-  let backgroundColor = theme.colors.gray[1]; // Neutral for totalSections === 0
+  let backgroundColor = theme.colors.gray[1];
   let textColor = theme.black;
   const progressValue = totalSections > 0 ? (completedSections / totalSections) * 100 : 0;
   let progressColor = theme.colors.yellow[6];
 
   if (totalSections > 0) {
-    if (completedSections === totalSections) {
+    if (progressValue === 100) {
       backgroundColor = theme.colors.green[1];
       textColor = theme.colors.green[8];
       progressColor = theme.colors.green[6];
-    } else {
+    } else if (progressValue > 0) {
       backgroundColor = theme.colors.yellow[1];
       textColor = theme.colors.yellow[8];
     }
@@ -93,7 +100,8 @@ const StatusBar: React.FC<StatusBarProps> = ({ currentCourse }) => {
   const sectionsRemaining = totalSections - completedSections;
   const statusText = sectionsRemaining > 0 
     ? `${sectionsRemaining} section(s) need attention.`
-    : `All ${totalSections} sections look complete!`;
+    : (totalSections > 0 ? `All ${totalSections} sections look complete!` : `Course is empty.`);
+
 
   return (
     <Paper p="sm" mb="md" style={{ backgroundColor }} shadow="xs">
@@ -101,7 +109,7 @@ const StatusBar: React.FC<StatusBarProps> = ({ currentCourse }) => {
       {totalSections > 0 && (
          <Progress value={progressValue} color={progressColor} striped animated={completedSections < totalSections} />
       )}
-      <Text c="dimmed" size="xs" mt={3}>{completedSections} / {totalSections} sections considered complete.</Text>
+      <Text c="dimmed" size="xs" mt={3}>{completedSections} / {totalSections} sections considered complete by this component.</Text>
     </Paper>
   );
 };
